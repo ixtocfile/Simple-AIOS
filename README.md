@@ -3,8 +3,7 @@
 Prototype minimal d'une couche intelligente au-dessus de Linux, uniquement en
 ligne de commande. Linux reste responsable du système et du matériel.
 
-L'étape 0.1 fournit uniquement un package Python : `python -m aios` affiche
-`Simple-AIOS` puis se termine.
+L'étape 0.2 fournit un shell interactif minimal, sans LLM.
 
 ## Développement
 
@@ -21,7 +20,18 @@ Sortie attendue :
 
 ```text
 Simple-AIOS
+ai>
 ```
+
+Commandes disponibles :
+
+- `/help` : afficher l'aide.
+- `/version` : afficher la version du package.
+- `/exit` : quitter.
+
+Une entrée vide affiche une nouvelle invite. Une entrée inconnue affiche un
+message d'aide et laisse le shell ouvert. Ctrl+D (fin d'entrée) ou Ctrl+C
+ferment également le shell proprement.
 
 ## Tests
 

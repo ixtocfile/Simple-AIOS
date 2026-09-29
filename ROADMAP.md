@@ -6,16 +6,19 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 0.1 terminée. Aucune étape en cours ; prochaine étape : 0.2,
+État : étape 0.2 terminée. Aucune étape en cours ; prochaine étape : 1.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
 
+Validation de l'étape 0.2 sous Python 3.12 : `python -m pytest -q` : 9 tests
+réussis (invite, commandes, espaces, entrées vides ou inconnues, EOF et Ctrl+C).
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
-- [todo] 0.2 — CLI interactif : invite `ai>`, `/help`, `/exit`, `/version`, sans LLM.
+- [done] 0.2 — CLI interactif : invite `ai>`, `/help`, `/exit`, `/version`, sans LLM.
 
 ## Phase 1 — Configuration
 
