@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 0.2 terminée. Aucune étape en cours ; prochaine étape : 1.1,
+État : étape 1.1 terminée. Aucune étape en cours ; prochaine étape : 1.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -15,6 +15,10 @@ Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 Validation de l'étape 0.2 sous Python 3.12 : `python -m pytest -q` : 9 tests
 réussis (invite, commandes, espaces, entrées vides ou inconnues, EOF et Ctrl+C).
 
+Validation de l'étape 1.1 sous Python 3.12 : `python -m pytest -q` : 30 tests
+réussis, dont 21 pour le chargement TOML, les valeurs par défaut et la validation.
+Le chargeur reste indépendant du CLI ; aucun logging ni appel LLM ajouté.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -22,7 +26,7 @@ réussis (invite, commandes, espaces, entrées vides ou inconnues, EOF et Ctrl+C
 
 ## Phase 1 — Configuration
 
-- [todo] 1.1 — Configuration : provider, modèle, URL Ollama, données et logs.
+- [done] 1.1 — Configuration : provider, modèle, URL Ollama, données et logs.
 - [todo] 1.2 — Logging : démarrage, arrêt et erreurs, sans secrets.
 
 ## Phase 2 — LLM
