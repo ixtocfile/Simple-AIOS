@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 2.3 terminée. Aucune étape en cours ; prochaine étape : 3.1,
+État : étape 3.1 terminée. Aucune étape en cours ; prochaine étape : 3.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -40,6 +40,12 @@ configuration du provider, reprise après erreur Ollama, sorties propres et
 absence de contenu sensible dans les logs vérifiées avec FakeLLMProvider.
 Les réponses restent du texte ; aucun outil système n'est exécuté.
 
+Validation de l'étape 3.1 sous Python 3.12 : `python -m pytest -q` : 126 tests
+réussis. Contrat abstrait, cohérence des résultats, enregistrement et refus des
+doublons, validation avant exécution, copie des arguments et erreurs sans
+détails sensibles vérifiés avec des outils fictifs en mémoire. Aucun outil
+système ni raccordement au CLI ou au LLM ajouté.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -58,7 +64,7 @@ Les réponses restent du texte ; aucun outil système n'est exécuté.
 
 ## Phase 3 — Outils
 
-- [todo] 3.1 — Tool, ToolResult et ToolRegistry, avec validation des arguments.
+- [done] 3.1 — Tool, ToolResult et ToolRegistry, avec validation des arguments.
 - [todo] 3.2 — `system.info` : hostname, OS, kernel, architecture et uptime.
 - [todo] 3.3 — `system.memory` : résultat structuré.
 - [todo] 3.4 — `system.disk` : lecture uniquement.

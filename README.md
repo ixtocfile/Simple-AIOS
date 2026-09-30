@@ -157,6 +157,37 @@ pour HTTP, le code de statut, sans recopier le corps de réponse ni le détail d
 exceptions réseau. Le provider ne journalise pas les échanges et ne réessaie
 pas automatiquement les requêtes.
 
+## Contrats d'outils
+
+Le module `aios.tools` fournit trois éléments indépendants du CLI et du LLM :
+
+- `Tool` : classe abstraite avec `name`, `description`,
+  `validate_arguments(arguments)` et `_execute(arguments)`. Chaque outil doit
+  contrôler les clés obligatoires ou inconnues, les types et les valeurs de ses
+  arguments. Le validateur lève une exception en cas d'entrée invalide.
+- `ToolResult` : résultat avec `success`, `data` et `error`. Un succès contient
+  un dictionnaire de données à clés textuelles et aucune erreur. Un échec
+  contient un message d'erreur non vide et aucune donnée. Les combinaisons
+  incohérentes sont refusées à la construction.
+- `ToolRegistry` : registre vide à la création, avec `register(tool)`,
+  `get(name)`, `list_tools()` et `execute(name, arguments)`. Il refuse les noms
+  en double, vides ou contenant des espaces, et les descriptions vides.
+  La liste conserve l'ordre d'enregistrement ; `get` lève `KeyError` si le nom
+  est inconnu.
+
+Les appels passent par `execute`, qui exige un dictionnaire à clés textuelles
+et en réalise une copie indépendante avant validation. Le validateur peut
+normaliser cette copie, ensuite transmise à `_execute`. Une validation échouée
+empêche l'exécution. Un outil inconnu, une exception ordinaire ou un retour de
+type incorrect produit un `ToolResult` d'échec avec un message générique.
+Les détails des exceptions et les arguments ne sont pas journalisés ;
+`KeyboardInterrupt` et `SystemExit` continuent de se propager.
+
+Cette étape fournit uniquement les contrats et le registre pour les appels
+Python de confiance. Les outils concrets sont encore à implémenter et le
+registre n'est pas raccordé au CLI ou au LLM. La validation des arguments ne
+remplace pas le futur contrôle d'autorisation par le Policy Engine.
+
 ## Tests
 
 ```bash
