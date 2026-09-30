@@ -298,6 +298,43 @@ Chaque appel relit les statistiques. Un chemin inaccessible ou des statistiques
 invalides produisent un échec générique, sans données partielles ni détails
 d'exception. L'outil reste indépendant du CLI et du LLM.
 
+## Outil processus : process.list
+
+`aios.process_list.ProcessListTool` liste les processus Linux visibles dans
+`/proc`, en lecture seule et sans commande externe ni dépendance supplémentaire.
+L'argument optionnel `limit` vaut 20 par défaut : il doit être un entier de 1 à
+100, sans accepter les booléens. Les autres arguments sont refusés avant toute
+lecture.
+
+Le `ToolResult` réussi contient `data["processes"]`, une liste triée par PID
+croissant, avec au plus `limit` éléments. Chaque élément contient :
+
+| Champ | Valeur |
+| --- | --- |
+| `pid` | Identifiant entier du processus. |
+| `name` | Nom court fourni par `/proc/<pid>/comm`. |
+
+Le [nom court du noyau](https://man7.org/linux/man-pages/man5/proc_pid_comm.5.html)
+peut être tronqué. Les octets non valides en UTF-8 sont remplacés lors du décodage.
+Les arguments de commande et les variables d'environnement ne sont pas lus.
+
+```python
+from aios.process_list import ProcessListTool
+from aios.tools import ToolRegistry
+
+registry = ToolRegistry()
+registry.register(ProcessListTool())
+result = registry.execute("process.list", {"limit": 10})
+print(result)
+```
+
+Chaque appel relit les processus. Ceux qui disparaissent ou dont la lecture est
+refusée sont ignorés sans consommer la limite ; la lecture des noms s'arrête dès
+que celle-ci est atteinte. La liste peut être vide et ne constitue pas un
+instantané atomique. Si `/proc` ne peut pas être énuméré, ou si une autre erreur
+de lecture survient, l'outil renvoie un échec générique sans données partielles.
+Il reste indépendant du CLI et du LLM.
+
 ## Tests
 
 ```bash
