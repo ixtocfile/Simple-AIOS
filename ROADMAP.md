@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 1.2 terminée. Aucune étape en cours ; prochaine étape : 2.1,
+État : étape 2.1 terminée. Aucune étape en cours ; prochaine étape : 2.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -24,6 +24,10 @@ réussis. Logs de démarrage, arrêt et erreurs, filtrage du niveau, absence de
 doublons, fermeture des fichiers et protection des messages sensibles vérifiés.
 Le CLI charge désormais les valeurs par défaut ou un fichier via `--config`.
 
+Validation de l'étape 2.1 sous Python 3.12 : `python -m pytest -q` : 49 tests
+réussis. Contrat abstrait, réponses prédéfinies, épuisement explicite et copie
+indépendante des appels vérifiés, sans LLM ni accès réseau.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -36,7 +40,7 @@ Le CLI charge désormais les valeurs par défaut ou un fichier via `--config`.
 
 ## Phase 2 — LLM
 
-- [todo] 2.1 — Interface LLMProvider et FakeLLMProvider pour les tests.
+- [done] 2.1 — Interface LLMProvider et FakeLLMProvider pour les tests.
 - [todo] 2.2 — OllamaProvider : API locale, timeout et gestion des erreurs.
 - [todo] 2.3 — Conversation CLI avec le provider, sans outil système.
 

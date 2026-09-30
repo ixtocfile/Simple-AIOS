@@ -88,6 +88,26 @@ logs. Une erreur inattendue termine le CLI avec le code 1. Si la configuration
 ou le journal ne peut pas être initialisé, le CLI affiche un message sur stderr
 et termine également avec le code 1.
 
+## Interface LLM pour les tests
+
+`aios.llm.LLMProvider` définit `chat(messages) -> str`. Chaque message est un
+dictionnaire avec `role` (`system`, `user` ou `assistant`) et `content` (texte).
+Le provider renvoie le texte de l'assistant sans modifier les messages reçus.
+
+`FakeLLMProvider` renvoie une réponse prédéfinie par appel, dans l'ordre :
+
+```python
+from aios.llm import FakeLLMProvider, LLMProvider
+
+provider: LLMProvider = FakeLLMProvider(["Bonjour !"])
+reply = provider.chat([{"role": "user", "content": "Bonjour"}])
+```
+
+Le faux provider conserve une copie de chaque appel dans `calls`, uniquement en
+mémoire, et lève `RuntimeError` si ses réponses sont épuisées. Il fonctionne sans
+réseau ni modèle installé. Ollama et la connexion au CLI sont prévus aux étapes
+2.2 et 2.3 de la roadmap.
+
 ## Tests
 
 ```bash
