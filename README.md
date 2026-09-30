@@ -3,8 +3,8 @@
 Prototype minimal d'une couche intelligente au-dessus de Linux, uniquement en
 ligne de commande. Linux reste responsable du système et du matériel.
 
-Le projet fournit un shell interactif minimal et un chargeur de configuration,
-sans LLM.
+Le projet fournit un shell interactif minimal, un chargeur de configuration
+et des logs applicatifs, sans LLM.
 
 ## Développement
 
@@ -64,8 +64,29 @@ Un fichier explicite absent, illisible ou mal formé produit une exception.
 `data_dir` devient un `Path` : `~` est développé ; un chemin relatif reste relatif
 au répertoire de travail. Aucun répertoire n'est créé par le chargement.
 
-Le CLI ne charge pas encore ces paramètres : leur utilisation sera ajoutée avec
-le logging et le provider aux étapes prévues dans la roadmap.
+Le CLI utilise les valeurs par défaut, ou un fichier TOML fourni explicitement :
+
+```bash
+python -m aios --config config/example.toml
+```
+
+## Logs
+
+La bibliothèque standard `logging` écrit en UTF-8, en ajout à
+`<data_dir>/logs/simple-aios.log`. Le répertoire est créé à l'initialisation du
+logger. Par défaut : `~/.local/share/simple-aios/logs/simple-aios.log`.
+Chaque ligne contient la date, l'heure, le niveau et l'événement.
+
+Le démarrage et l'arrêt sont journalisés au niveau INFO ; les erreurs inattendues
+au niveau ERROR avec leur type. `/exit`, Ctrl+D et Ctrl+C ferment proprement le
+journal. `log_level` filtre les événements : ERROR masque notamment les événements
+INFO ; NOTSET inclut tous les niveaux standard.
+
+Le CLI n'enregistre ni les saisies, ni la configuration, ni le texte des exceptions
+ou leurs tracebacks, afin de ne pas recopier de mots de passe ou tokens dans les
+logs. Une erreur inattendue termine le CLI avec le code 1. Si la configuration
+ou le journal ne peut pas être initialisé, le CLI affiche un message sur stderr
+et termine également avec le code 1.
 
 ## Tests
 
