@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 3.1 terminée. Aucune étape en cours ; prochaine étape : 3.2,
+État : étape 3.2 terminée. Aucune étape en cours ; prochaine étape : 3.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -46,6 +46,12 @@ doublons, validation avant exécution, copie des arguments et erreurs sans
 détails sensibles vérifiés avec des outils fictifs en mémoire. Aucun outil
 système ni raccordement au CLI ou au LLM ajouté.
 
+Validation de l'étape 3.2 sous Python 3.12 : `python -m pytest -q` : 142 tests
+réussis. Résultat structuré de `system.info`, refus des arguments avant lecture,
+uptime, erreurs de lecture et absence de commandes externes vérifiés. Un appel
+réel sous Linux a également validé les cinq champs. Aucun raccordement au CLI
+ou au LLM ajouté.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -65,7 +71,7 @@ système ni raccordement au CLI ou au LLM ajouté.
 ## Phase 3 — Outils
 
 - [done] 3.1 — Tool, ToolResult et ToolRegistry, avec validation des arguments.
-- [todo] 3.2 — `system.info` : hostname, OS, kernel, architecture et uptime.
+- [done] 3.2 — `system.info` : hostname, OS, kernel, architecture et uptime.
 - [todo] 3.3 — `system.memory` : résultat structuré.
 - [todo] 3.4 — `system.disk` : lecture uniquement.
 - [todo] 3.5 — `process.list` : nombre de résultats limité.

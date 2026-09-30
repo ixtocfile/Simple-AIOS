@@ -183,10 +183,45 @@ type incorrect produit un `ToolResult` d'échec avec un message générique.
 Les détails des exceptions et les arguments ne sont pas journalisés ;
 `KeyboardInterrupt` et `SystemExit` continuent de se propager.
 
-Cette étape fournit uniquement les contrats et le registre pour les appels
-Python de confiance. Les outils concrets sont encore à implémenter et le
-registre n'est pas raccordé au CLI ou au LLM. La validation des arguments ne
-remplace pas le futur contrôle d'autorisation par le Policy Engine.
+Le registre sert aux appels Python de confiance et n'est pas raccordé au CLI
+ou au LLM. La validation des arguments ne remplace pas le futur contrôle
+d'autorisation par le Policy Engine.
+
+## Premier outil : system.info
+
+`aios.system_info.SystemInfoTool` lit les informations de base du système Linux.
+Il accepte uniquement un dictionnaire d'arguments vide (`{}`) et utilise
+[os.uname()](https://docs.python.org/3.12/library/os.html#os.uname) ainsi que
+[/proc/uptime](https://docs.kernel.org/filesystems/proc.html), en lecture seule,
+sans commande shell ni dépendance supplémentaire.
+
+Le `ToolResult` réussi contient ces champs dans `data` :
+
+| Champ | Valeur |
+| --- | --- |
+| `hostname` | Nom de la machine fourni par le système. |
+| `os` | Nom du système d'exploitation, par exemple `Linux`. |
+| `kernel` | Version du noyau (`release` de `os.uname()`). |
+| `architecture` | Identifiant matériel, par exemple `x86_64` ou `aarch64`. |
+| `uptime_seconds` | Durée depuis le démarrage, en secondes, sous forme de flottant. |
+
+Utilisation depuis Python, après installation du package :
+
+```python
+from aios.system_info import SystemInfoTool
+from aios.tools import ToolRegistry
+
+registry = ToolRegistry()
+registry.register(SystemInfoTool())
+result = registry.execute("system.info", {})
+print(result)
+```
+
+Les informations sont relues à chaque appel. Les arguments inattendus sont
+refusés avant toute lecture. Si les données sont inaccessibles ou si l'uptime
+est invalide (notamment négatif ou non fini), l'outil renvoie un échec générique
+sans données partielles ni détails d'exception. Il reste indépendant du CLI
+et du LLM.
 
 ## Tests
 
