@@ -3,8 +3,9 @@
 Prototype minimal d'une couche intelligente au-dessus de Linux, uniquement en
 ligne de commande. Linux reste responsable du système et du matériel.
 
-Le projet fournit un shell interactif minimal, un chargeur de configuration
-et des logs applicatifs, sans LLM.
+Le projet fournit un shell interactif minimal, un chargeur de configuration,
+des logs applicatifs et des providers LLM. La conversation dans le CLI est
+prévue à l'étape 2.3.
 
 ## Développement
 
@@ -88,7 +89,7 @@ logs. Une erreur inattendue termine le CLI avec le code 1. Si la configuration
 ou le journal ne peut pas être initialisé, le CLI affiche un message sur stderr
 et termine également avec le code 1.
 
-## Interface LLM pour les tests
+## Interface LLM
 
 `aios.llm.LLMProvider` définit `chat(messages) -> str`. Chaque message est un
 dictionnaire avec `role` (`system`, `user` ou `assistant`) et `content` (texte).
@@ -105,8 +106,34 @@ reply = provider.chat([{"role": "user", "content": "Bonjour"}])
 
 Le faux provider conserve une copie de chaque appel dans `calls`, uniquement en
 mémoire, et lève `RuntimeError` si ses réponses sont épuisées. Il fonctionne sans
-réseau ni modèle installé. Ollama et la connexion au CLI sont prévus aux étapes
-2.2 et 2.3 de la roadmap.
+réseau ni modèle installé.
+
+## Provider Ollama
+
+`aios.ollama.OllamaProvider` implémente la même interface avec `urllib` et `json`
+de la bibliothèque standard. Il utilise `model` et `ollama_url` de la configuration
+pour envoyer un POST à [`/api/chat`](https://docs.ollama.com/api/chat), avec
+`stream: false`, puis renvoie le texte `message.content` de la réponse.
+
+```python
+from aios.config import load_config
+from aios.ollama import OllamaProvider
+
+provider = OllamaProvider(load_config(), timeout=60.0)
+reply = provider.chat([{"role": "user", "content": "Bonjour"}])
+print(reply)
+```
+
+Cet appel nécessite un serveur Ollama accessible et le modèle configuré déjà
+installé. La construction du provider n'effectue aucun appel réseau.
+Le timeout, positif et fini, vaut 60 secondes par défaut et borne chaque
+opération réseau bloquante de connexion ou de lecture.
+
+Les erreurs HTTP, réseau, les dépassements du timeout et les réponses invalides
+produisent une `OllamaError`. Les messages d'erreur indiquent la catégorie et,
+pour HTTP, le code de statut, sans recopier le corps de réponse ni le détail des
+exceptions réseau. Le provider ne journalise pas les échanges et ne réessaie
+pas automatiquement les requêtes. Sa connexion au CLI reste prévue à l'étape 2.3.
 
 ## Tests
 
