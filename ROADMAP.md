@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 3.3 terminée. Aucune étape en cours ; prochaine étape : 3.4,
+État : étape 3.4 terminée. Aucune étape en cours ; prochaine étape : 3.5,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -58,6 +58,12 @@ d'utilisation, refus des arguments et des données invalides, erreurs de lecture
 et absence de commandes externes vérifiés. Un appel réel sous Linux a validé
 les cinq champs. Aucun raccordement au CLI ou au LLM ajouté.
 
+Validation de l'étape 3.4 sous Python 3.12 : `python -m pytest -q` : 198 tests
+réussis. Résultat structuré de `system.disk`, chemin par défaut ou explicite,
+validation des arguments, pourcentages et erreurs vérifiés. Des consultations
+réelles de fichiers et dossiers ont confirmé l'absence de modification ; un
+appel sur `/` a validé les cinq champs. Aucun raccordement au CLI ou au LLM ajouté.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -79,7 +85,7 @@ les cinq champs. Aucun raccordement au CLI ou au LLM ajouté.
 - [done] 3.1 — Tool, ToolResult et ToolRegistry, avec validation des arguments.
 - [done] 3.2 — `system.info` : hostname, OS, kernel, architecture et uptime.
 - [done] 3.3 — `system.memory` : résultat structuré.
-- [todo] 3.4 — `system.disk` : lecture uniquement.
+- [done] 3.4 — `system.disk` : lecture uniquement.
 - [todo] 3.5 — `process.list` : nombre de résultats limité.
 
 ## Phase 4 — Policy Engine

@@ -258,6 +258,46 @@ une valeur manquante, dupliquée, mal formée ou incohérente, ou une lecture
 impossible, produit un échec générique sans données partielles. Les arguments
 sont refusés avant toute lecture. L'outil reste indépendant du CLI et du LLM.
 
+## Outil disque : system.disk
+
+`aios.system_disk.SystemDiskTool` consulte la capacité du système de fichiers
+contenant un chemin, avec
+[shutil.disk_usage](https://docs.python.org/3.12/library/shutil.html#shutil.disk_usage).
+La consultation est en lecture seule, sans commande externe ni dépendance
+supplémentaire.
+
+L'argument optionnel `path` vaut `/` par défaut. Il doit être une chaîne
+représentant un chemin absolu, sans caractère nul, vers un fichier ou dossier
+existant. Les autres arguments sont refusés avant toute consultation.
+
+Le `ToolResult` réussi contient ces champs dans `data` :
+
+| Champ | Valeur |
+| --- | --- |
+| `path` | Chemin interrogé. |
+| `total_bytes` | Capacité totale du système de fichiers, en octets. |
+| `used_bytes` | Espace utilisé, en octets. |
+| `free_bytes` | Espace disponible pour un utilisateur non privilégié sous Linux, en octets. |
+| `used_percent` | `used_bytes / total_bytes × 100`, arrondi à deux décimales. |
+
+Les blocs réservés peuvent expliquer que `used_bytes + free_bytes` soit inférieur
+à `total_bytes`. Si la capacité signalée est nulle, le pourcentage vaut `0.0`.
+
+```python
+from aios.system_disk import SystemDiskTool
+from aios.tools import ToolRegistry
+
+registry = ToolRegistry()
+registry.register(SystemDiskTool())
+result = registry.execute("system.disk", {})
+print(result)
+```
+
+Pour cibler un autre volume, passez par exemple `{"path": "/mnt/data"}`.
+Chaque appel relit les statistiques. Un chemin inaccessible ou des statistiques
+invalides produisent un échec générique, sans données partielles ni détails
+d'exception. L'outil reste indépendant du CLI et du LLM.
+
 ## Tests
 
 ```bash
