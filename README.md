@@ -223,6 +223,41 @@ est invalide (notamment négatif ou non fini), l'outil renvoie un échec génér
 sans données partielles ni détails d'exception. Il reste indépendant du CLI
 et du LLM.
 
+## Outil mémoire : system.memory
+
+`aios.system_memory.SystemMemoryTool` lit la RAM exposée par
+[/proc/meminfo](https://docs.kernel.org/filesystems/proc.html#meminfo), en lecture
+seule et sans commande externe. Il accepte uniquement `{}`. Les tailles sont
+des entiers en octets : les valeurs `kB` du noyau sont multipliées par 1024.
+
+Le `ToolResult` réussi contient ces champs dans `data` :
+
+| Champ | Valeur |
+| --- | --- |
+| `total_bytes` | RAM utilisable totale (`MemTotal`). |
+| `free_bytes` | RAM libre (`MemFree`). |
+| `available_bytes` | Estimation de la RAM disponible pour de nouvelles applications sans swap (`MemAvailable`). |
+| `used_bytes` | Utilisation estimée : `total_bytes - available_bytes`. |
+| `used_percent` | `used_bytes / total_bytes × 100`, arrondi à deux décimales. |
+
+La mémoire disponible tient notamment compte de mémoire récupérable dans les
+caches. Le calcul de l'utilisation s'appuie donc sur `MemAvailable`.
+
+```python
+from aios.system_memory import SystemMemoryTool
+from aios.tools import ToolRegistry
+
+registry = ToolRegistry()
+registry.register(SystemMemoryTool())
+result = registry.execute("system.memory", {})
+print(result)
+```
+
+Chaque appel relit les données. Les trois champs du noyau sont obligatoires ;
+une valeur manquante, dupliquée, mal formée ou incohérente, ou une lecture
+impossible, produit un échec générique sans données partielles. Les arguments
+sont refusés avant toute lecture. L'outil reste indépendant du CLI et du LLM.
+
 ## Tests
 
 ```bash
