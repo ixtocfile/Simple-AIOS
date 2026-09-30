@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 2.2 terminée. Aucune étape en cours ; prochaine étape : 2.3,
+État : étape 2.3 terminée. Aucune étape en cours ; prochaine étape : 3.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -32,7 +32,13 @@ Validation de l'étape 2.2 sous Python 3.12 : `python -m pytest -q` : 76 tests
 réussis. Requête Ollama sans streaming, modèle et URL configurés, timeout,
 erreurs HTTP/réseau, réponses invalides, fermeture des réponses et préservation
 des messages vérifiés avec un transport simulé, sans LLM ni accès réseau.
-Le provider reste indépendant du CLI.
+À cette étape, le provider était indépendant du CLI.
+
+Validation de l'étape 2.3 sous Python 3.12 : `python -m pytest -q` : 85 tests
+réussis. Conversation CLI avec contexte en mémoire, commandes locales,
+configuration du provider, reprise après erreur Ollama, sorties propres et
+absence de contenu sensible dans les logs vérifiées avec FakeLLMProvider.
+Les réponses restent du texte ; aucun outil système n'est exécuté.
 
 ## Phase 0 — Fondation
 
@@ -48,7 +54,7 @@ Le provider reste indépendant du CLI.
 
 - [done] 2.1 — Interface LLMProvider et FakeLLMProvider pour les tests.
 - [done] 2.2 — OllamaProvider : API locale, timeout et gestion des erreurs.
-- [todo] 2.3 — Conversation CLI avec le provider, sans outil système.
+- [done] 2.3 — Conversation CLI avec le provider, sans outil système.
 
 ## Phase 3 — Outils
 
