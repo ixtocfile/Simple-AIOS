@@ -5,7 +5,7 @@ ligne de commande. Linux reste responsable du système et du matériel.
 
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
 configuration, des logs applicatifs et un faux provider pour les tests.
-Les quatre outils de lecture système sont accessibles à la conversation après
+Les cinq outils de lecture système sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine.
 
 ## Développement
@@ -217,9 +217,9 @@ fournis à l'outil et des réponses du LLM :
 | `RiskLevel.CONFIRM` | Action nécessitant une confirmation explicite de l'utilisateur. |
 | `RiskLevel.DENY` | Action à refuser. |
 
-Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les quatre
-outils existants, `system.info`, `system.memory`, `system.disk` et `process.list`,
-déclarent `RiskLevel.READ`. Le registre valide le type du niveau à
+Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les cinq
+outils existants, `system.info`, `system.memory`, `system.disk`, `process.list`
+et `systemd.status`, déclarent `RiskLevel.READ`. Le registre valide le type du niveau à
 l'enregistrement : une simple chaîne comme `"READ"` est refusée. `get` et
 `list_tools` rendent ce niveau accessible sans exécuter l'outil.
 
@@ -296,7 +296,7 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les quatre outils existants sont classés `READ` ; les tests de
+action. Les cinq outils existants sont classés `READ` ; les tests de
 confirmation utilisent des outils fictifs. Le CLI appelle ce composant avec les
 arguments déjà validés et normalisés, juste avant l'exécution de l'outil.
 
@@ -348,9 +348,9 @@ rien. Le CLI enchaîne les vérifications décrites ci-dessous.
 
 ## Exécution d'un appel dans la conversation
 
-Le CLI enregistre `system.info`, `system.memory`, `system.disk` et `process.list`
-au début de chaque session, sans les exécuter. Lorsqu'une réponse du
-modèle est un appel JSON valide, il suit cet ordre :
+Le CLI enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
+et `systemd.status` au début de chaque session, sans les exécuter. Lorsqu'une
+réponse du modèle est un appel JSON valide, il suit cet ordre :
 
 1. Rechercher l'outil enregistré et valider ses arguments spécifiques.
 2. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
@@ -547,14 +547,63 @@ instantané atomique. Si `/proc` ne peut pas être énuméré, ou si une autre e
 de lecture survient, l'outil renvoie un échec générique sans données partielles.
 Il reste indépendant du CLI et du LLM.
 
+## Outil systemd : systemd.status
+
+`aios.systemd_status.SystemdStatusTool` consulte l'état d'un service du
+gestionnaire systemd système local. Il est classé `READ` et enregistré dans
+le CLI, avec validation et policy avant chaque consultation.
+
+Son seul argument, obligatoire, est `service` : un nom complet avec le suffixe
+`.service`, limité à 255 caractères ASCII. Le nom commence par une lettre ou
+un chiffre, puis accepte les lettres, chiffres, points, tirets, underscores et
+deux-points. Une instance explicite après un unique `@` est acceptée avec les
+mêmes règles, par exemple `openvpn-server@server.service`. Les noms abrégés,
+templates sans instance, chemins, motifs glob, caractères échappés et arguments
+supplémentaires sont refusés avant de lancer un processus.
+
+Exemple d'appel JSON dans une réponse du modèle :
+
+```json
+{"tool":"systemd.status","arguments":{"service":"ssh.service"}}
+```
+
+Le `ToolResult` réussi contient ces champs dans `data` :
+
+| Champ | Valeur |
+| --- | --- |
+| `service` | Nom complet demandé, inchangé. |
+| `load_state` | État de chargement, par exemple `loaded` ou `masked`. |
+| `active_state` | État d'activité, par exemple `active`, `inactive` ou `failed`. |
+| `sub_state` | État détaillé, par exemple `running`, `dead` ou `start-pre`. |
+
+Un service inactif, en échec ou masqué reste une consultation réussie : son état
+est décrit dans les données. Chaque appel interroge à nouveau systemd.
+
+L'outil utilise
+[`systemctl show`](https://github.com/systemd/systemd/blob/main/man/systemctl.xml)
+avec seulement les propriétés `LoadState`, `ActiveState` et `SubState`. La
+commande est fixe, transmise à `subprocess.run` sous forme de liste avec
+`shell=False`. Elle cible le gestionnaire système, désactive le pager et les
+demandes de mot de passe, ferme l'entrée standard et impose un timeout de cinq
+secondes. Aucun journal, environnement ou contenu de commande de service n'est
+demandé ; la sortie d'erreur de `systemctl` est écartée.
+
+Un service introuvable, l'absence de `systemctl` ou de systemd, un accès refusé,
+un timeout, un code de sortie non nul ou des propriétés invalides produisent
+`ToolResult(success=False, error="Tool execution failed")`, sans données
+partielles ni détails d'exception. Les erreurs ne déclenchent pas de commande
+de remplacement. L'outil utilise les droits du processus courant, sans `sudo`.
+
 ## Tests
 
 ```bash
 python -m pytest -q
 ```
 
-Les tests fonctionnent sans LLM. Le package n'a aucune dépendance d'exécution ;
-pytest est réservé aux tests.
+Les tests fonctionnent sans LLM et simulent `systemctl`, sans exiger systemd.
+Le package n'a aucune dépendance Python d'exécution ; pytest est réservé aux
+tests. L'utilisation réelle de `systemd.status` nécessite `systemctl` dans le
+`PATH` et un gestionnaire systemd système local accessible.
 
 Consulter [ROADMAP.md](ROADMAP.md) pour la progression et [AGENTS.md](AGENTS.md)
 pour les règles de contribution. Licence : [MIT](LICENSE).

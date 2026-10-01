@@ -9,6 +9,7 @@ from aios.process_list import ProcessListTool
 from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
+from aios.systemd_status import SystemdStatusTool
 from aios.tools import RiskLevel, Tool, ToolRegistry
 
 
@@ -105,7 +106,7 @@ def test_decisions_are_refreshed_from_the_same_registry(registered_tool):
 
 
 @pytest.mark.parametrize("tool_class", [
-    SystemInfoTool, SystemMemoryTool, SystemDiskTool, ProcessListTool,
+    SystemInfoTool, SystemMemoryTool, SystemDiskTool, ProcessListTool, SystemdStatusTool,
 ])
 def test_existing_read_only_tools_are_allowed_without_running(tool_class, monkeypatch):
     registry = ToolRegistry()

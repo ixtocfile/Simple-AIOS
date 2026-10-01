@@ -344,8 +344,44 @@ def test_default_cli_registry_contains_only_existing_read_tools():
     tools = _build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
+        "systemd.status",
     ]
     assert all(tool.risk_level is RiskLevel.READ for tool in tools)
+
+
+@pytest.mark.parametrize("service", ["private-status.service", "private-status.service;id"])
+def test_cli_systemd_status_returns_a_validated_result_to_the_model(
+    cli_session, monkeypatch, capsys, tmp_path, service,
+):
+    run = Mock(return_value=subprocess.CompletedProcess(
+        ["systemctl"], 0, stdout="LoadState=loaded\nActiveState=active\nSubState=running\n",
+    ))
+    monkeypatch.setattr("aios.systemd_status.subprocess.run", run)
+    reply = json.dumps({"tool": "systemd.status", "arguments": {"service": service}})
+    provider = FakeLLMProvider([reply, "Statut reçu"])
+
+    assert cli_session(provider, ["Consulte le service", "/exit"]) == 0
+
+    assert len(provider.calls) == 2
+    result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
+    assert result["tool"] == "systemd.status"
+    if service == "private-status.service":
+        assert result["success"] is True
+        assert result["data"] == {
+            "service": service, "load_state": "loaded", "active_state": "active", "sub_state": "running",
+        }
+        assert result["error"] is None
+        assert run.call_count == 1
+        assert run.call_args.args[0][-1] == service
+    else:
+        assert result["success"] is False
+        assert result["data"] is None
+        assert result["error"] == "Invalid tool arguments"
+        run.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.out == "Simple-AIOS\nStatut reçu\n"
+    assert captured.err == ""
+    assert "private-status" not in (tmp_path / "logs/simple-aios.log").read_text()
 
 
 def test_cli_validates_checks_policy_executes_and_returns_result_with_history(
