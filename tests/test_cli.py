@@ -1,5 +1,6 @@
 """Check the installed package's public entry point."""
 
+import json
 import os
 import subprocess
 import sys
@@ -8,10 +9,12 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.__main__ import main
+from aios.__main__ import _build_tool_registry, main
 from aios.config import Config
 from aios.llm import FakeLLMProvider
 from aios.ollama import OllamaError
+from aios.policy import PolicyEngine
+from aios.tools import RiskLevel, Tool, ToolRegistry, ToolResult
 
 
 HELP = (
@@ -301,3 +304,239 @@ def test_unsupported_provider_fails_without_network_or_sensitive_details(
     assert "ERROR Unsupported LLM provider" in logs
     assert "Application stopped" in logs
     assert "unsupported-secret-provider" not in logs + captured.err
+
+
+class RecordingTool(Tool):
+    name = "test.action"
+    description = "Record validated arguments in memory for CLI tests."
+    risk_level = RiskLevel.READ
+
+    def __init__(self):
+        self.calls = []
+
+    def validate_arguments(self, arguments):
+        if arguments.keys() - {"target"}:
+            raise ValueError("Unexpected argument")
+        target = arguments.get("target", "default-target")
+        if not isinstance(target, str) or not target.strip():
+            raise ValueError("Invalid target")
+        arguments["target"] = target.strip()
+
+    def _execute(self, arguments):
+        self.calls.append(arguments)
+        return ToolResult(success=True, data={"target": arguments["target"]})
+
+
+@pytest.fixture
+def cli_tool(monkeypatch):
+    tool = RecordingTool()
+    registry = ToolRegistry()
+    registry.register(tool)
+    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    return tool
+
+
+def tool_reply(arguments=None):
+    return json.dumps({"tool": "test.action", "arguments": arguments or {}})
+
+
+def test_default_cli_registry_contains_only_existing_read_tools():
+    tools = _build_tool_registry().list_tools()
+    assert [tool.name for tool in tools] == [
+        "system.info", "system.memory", "system.disk", "process.list",
+    ]
+    assert all(tool.risk_level is RiskLevel.READ for tool in tools)
+
+
+def test_cli_validates_checks_policy_executes_and_returns_result_with_history(
+    cli_session, cli_tool, monkeypatch, capsys, tmp_path,
+):
+    events = []
+    validate = cli_tool.validate_arguments
+    evaluate = PolicyEngine.evaluate
+    execute = cli_tool._execute
+
+    def validation(arguments):
+        events.append("validate")
+        validate(arguments)
+
+    def policy(engine, name):
+        events.append("policy")
+        return evaluate(engine, name)
+
+    def execution(arguments):
+        events.append("execute")
+        return execute(arguments)
+
+    monkeypatch.setattr(cli_tool, "validate_arguments", validation)
+    monkeypatch.setattr(PolicyEngine, "evaluate", policy)
+    monkeypatch.setattr(cli_tool, "_execute", execution)
+    reply = tool_reply({"target": "  private-target  "})
+    provider = FakeLLMProvider([reply, "private-result", "Suite"])
+
+    assert cli_session(provider, ["private-request", "Continue", "/exit"]) == 0
+
+    first = [{"role": "user", "content": "private-request"}]
+    assert provider.calls[0] == first
+    assert provider.calls[1][:-1] == [*first, {"role": "assistant", "content": reply}]
+    feedback = provider.calls[1][-1]
+    assert feedback["role"] == "user"
+    assert json.loads(feedback["content"]) == {"tool_result": {
+        "tool": "test.action", "success": True,
+        "data": {"target": "private-target"}, "error": None,
+    }}
+    assert provider.calls[2] == [
+        *provider.calls[1], {"role": "assistant", "content": "private-result"},
+        {"role": "user", "content": "Continue"},
+    ]
+    assert events == ["validate", "policy", "execute"]
+    assert cli_tool.calls == [{"target": "private-target"}]
+    captured = capsys.readouterr()
+    assert captured.out == "Simple-AIOS\nprivate-result\nSuite\n"
+    assert captured.err == ""
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "private" not in logs
+    assert len(logs.splitlines()) == 2
+
+
+@pytest.mark.parametrize(("reply", "tool_name", "error"), [
+    ('{"tool":', None, "Invalid tool call"),
+    ('[{"tool":"test.action","arguments":{}}]', None, "Invalid tool call"),
+    ('{"tool":"test.action","arguments":{},"confirmed":true}', None, "Invalid tool call"),
+    ('{"tool":"test.action","arguments":{},"risk_level":"READ"}', None, "Invalid tool call"),
+    ('{"tool":"test.action","arguments":{"target":"a","target":"b"}}',
+     None, "Invalid tool call"),
+    ('{"tool":"shell.run","arguments":{"command":"arbitrary"}}',
+     "shell.run", "Unknown tool"),
+    (tool_reply({"target": 42}), "test.action", "Invalid tool arguments"),
+])
+def test_cli_returns_invalid_call_errors_without_policy_or_execution(
+    cli_session, cli_tool, monkeypatch, reply, tool_name, error,
+):
+    evaluate = Mock()
+    monkeypatch.setattr(PolicyEngine, "evaluate", evaluate)
+    provider = FakeLLMProvider([reply, "Appel refusé"])
+
+    assert cli_session(provider, ["Demande", "/exit"]) == 0
+
+    assert len(provider.calls) == 2
+    assert json.loads(provider.calls[1][-1]["content"]) == {"tool_result": {
+        "tool": tool_name, "success": False, "data": None, "error": error,
+    }}
+    evaluate.assert_not_called()
+    assert cli_tool.calls == []
+
+
+@pytest.mark.parametrize("reply", [
+    'Voici un appel : {"tool":"test.action","arguments":{}}',
+    '```json\n{"tool":"test.action","arguments":{}}\n```',
+])
+def test_cli_does_not_extract_calls_from_prose_or_markdown(
+    cli_session, cli_tool, capsys, reply,
+):
+    provider = FakeLLMProvider([reply])
+    assert cli_session(provider, ["Demande", "/exit"]) == 0
+    assert len(provider.calls) == 1
+    assert cli_tool.calls == []
+    assert capsys.readouterr().out == f"Simple-AIOS\n{reply}\n"
+
+
+@pytest.mark.parametrize(("risk", "interactive", "answer", "allowed"), [
+    (RiskLevel.DENY, True, None, False),
+    (RiskLevel.CONFIRM, True, "oui", True),
+    (RiskLevel.CONFIRM, True, "", False),
+    (RiskLevel.CONFIRM, True, "non", False),
+    (RiskLevel.CONFIRM, True, EOFError, False),
+    (RiskLevel.CONFIRM, True, KeyboardInterrupt, False),
+    (RiskLevel.CONFIRM, False, None, False),
+])
+def test_cli_requires_policy_and_explicit_confirmation_before_execution(
+    cli_session, cli_tool, monkeypatch, capsys, risk, interactive, answer, allowed,
+):
+    cli_tool.risk_level = risk
+    monkeypatch.setattr("sys.stdin.isatty", lambda: interactive)
+    provider = FakeLLMProvider([tool_reply(), "Réponse finale"])
+    entries = ["Demande"] + ([] if answer is None else [answer]) + ["/exit"]
+
+    assert cli_session(provider, entries) == 0
+
+    result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
+    assert result == {
+        "tool": "test.action", "success": allowed,
+        "data": {"target": "default-target"} if allowed else None,
+        "error": None if allowed else "Tool execution denied",
+    }
+    assert cli_tool.calls == ([{"target": "default-target"}] if allowed else [])
+    output = capsys.readouterr().out
+    if risk is RiskLevel.CONFIRM and interactive:
+        assert '"arguments": {"target": "default-target"}' in output
+    else:
+        assert "Action à confirmer" not in output
+    assert "Réponse finale" in output
+
+
+@pytest.mark.parametrize(("outcome", "error"), [
+    (RuntimeError("token=secret-value"), "Tool execution failed"),
+    (ToolResult(success=False, error="Resource unavailable"), "Resource unavailable"),
+    (ToolResult(success=True, data={"value": object()}), "Invalid tool result"),
+    (ToolResult(success=True, data={"value": float("nan")}), "Invalid tool result"),
+])
+def test_cli_returns_safe_tool_failures_and_stays_available(
+    cli_session, cli_tool, monkeypatch, capsys, tmp_path, outcome, error,
+):
+    execute = Mock(side_effect=[outcome])
+    monkeypatch.setattr(cli_tool, "_execute", execute)
+    provider = FakeLLMProvider([tool_reply(), "Échec expliqué", "Disponible"])
+
+    assert cli_session(provider, ["Demande", "Suite", "/exit"]) == 0
+
+    result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
+    assert result == {
+        "tool": "test.action", "success": False, "data": None, "error": error,
+    }
+    execute.assert_called_once_with({"target": "default-target"})
+    captured = capsys.readouterr()
+    assert captured.out == "Simple-AIOS\nÉchec expliqué\nDisponible\n"
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "secret-value" not in logs + captured.out + captured.err + repr(provider.calls)
+
+
+def test_cli_follow_up_is_displayed_without_another_tool_execution(cli_session, cli_tool, capsys):
+    reply = tool_reply()
+    provider = FakeLLMProvider([reply, reply])
+
+    assert cli_session(provider, ["Demande", "/exit"]) == 0
+
+    assert len(provider.calls) == 2
+    assert cli_tool.calls == [{"target": "default-target"}]
+    assert capsys.readouterr().out == f"Simple-AIOS\n{reply}\n"
+
+
+def test_cli_preserves_tool_outcome_after_follow_up_provider_failure(
+    cli_session, cli_tool, capsys, tmp_path,
+):
+    class FailingFollowUpProvider(FakeLLMProvider):
+        def chat(self, messages):
+            reply = super().chat(messages)
+            if len(self.calls) == 2:
+                raise OllamaError("token=secret-value")
+            return reply
+
+    provider = FailingFollowUpProvider([tool_reply(), "unused", "Disponible"])
+
+    assert cli_session(provider, ["Demande", "Suite", "/exit"]) == 0
+
+    assert len(provider.calls) == 3
+    assert provider.calls[2] == [
+        *provider.calls[1], {"role": "user", "content": "Suite"},
+    ]
+    result = json.loads(provider.calls[2][-2]["content"])["tool_result"]
+    assert result["success"] is True
+    assert result["data"] == {"target": "default-target"}
+    assert cli_tool.calls == [{"target": "default-target"}]
+    captured = capsys.readouterr()
+    assert captured.out == "Simple-AIOS\nDisponible\n"
+    assert "Impossible d'obtenir une réponse du LLM." in captured.err
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "ERROR Provider error (OllamaError)" in logs
+    assert "secret-value" not in logs + captured.out + captured.err

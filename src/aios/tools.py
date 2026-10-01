@@ -1,6 +1,7 @@
 """Local tool contracts and registry, independent of the CLI and LLM."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
@@ -43,8 +44,11 @@ class Tool(ABC):
     description: str = ""
     risk_level: RiskLevel = RiskLevel.DENY
 
-    def execute(self, arguments: dict[str, object]) -> ToolResult:
-        """Validate a private copy before running; never expose exception details."""
+    def execute(
+        self, arguments: dict[str, object], *,
+        authorize: Callable[[dict[str, object]], bool] | None = None,
+    ) -> ToolResult:
+        """Validate a private copy, then optionally authorize before running."""
         if not isinstance(arguments, dict) or any(
             not isinstance(key, str) for key in arguments
         ):
@@ -54,6 +58,14 @@ class Tool(ABC):
             self.validate_arguments(validated)
         except Exception:
             return ToolResult(success=False, error="Invalid tool arguments")
+
+        if authorize is not None:
+            try:
+                allowed = authorize(deepcopy(validated))
+            except Exception:
+                return ToolResult(success=False, error="Tool authorization failed")
+            if allowed is not True:
+                return ToolResult(success=False, error="Tool execution denied")
 
         try:
             result = self._execute(validated)
@@ -108,7 +120,10 @@ class ToolRegistry:
         """Return a snapshot in registration order, without executing anything."""
         return tuple(self._tools.values())
 
-    def execute(self, name: str, arguments: dict[str, object]) -> ToolResult:
+    def execute(
+        self, name: str, arguments: dict[str, object], *,
+        authorize: Callable[[dict[str, object]], bool] | None = None,
+    ) -> ToolResult:
         if not isinstance(name, str) or name not in self._tools:
             return ToolResult(success=False, error="Unknown tool")
-        return self._tools[name].execute(arguments)
+        return self._tools[name].execute(arguments, authorize=authorize)

@@ -285,3 +285,82 @@ def test_tool_without_arguments_accepts_only_an_empty_dictionary():
     assert tool.execute({}) == ToolResult(success=True, data={})
     assert not tool.execute({"unexpected": True}).success
     assert tool.calls == [{}]
+
+
+def test_authorization_uses_once_validated_arguments_without_changing_execution():
+    events = []
+
+    class NormalizingTool(EchoTool):
+        def validate_arguments(self, arguments):
+            events.append("validate")
+            arguments["nested"]["items"].append("validated")
+
+        def _execute(self, arguments):
+            events.append("execute")
+            return ToolResult(success=True, data=arguments)
+
+    def authorize(arguments):
+        events.append("authorize")
+        assert arguments == {"nested": {"items": ["original", "validated"]}}
+        arguments["nested"]["items"].append("authorization-only")
+        return True
+
+    original = {"nested": {"items": ["original"]}}
+    registry = ToolRegistry()
+    registry.register(NormalizingTool())
+
+    result = registry.execute("test.echo", original, authorize=authorize)
+
+    assert events == ["validate", "authorize", "execute"]
+    assert result == ToolResult(
+        success=True, data={"nested": {"items": ["original", "validated"]}},
+    )
+    assert original == {"nested": {"items": ["original"]}}
+
+
+@pytest.mark.parametrize("answer", [False, None, 1, "oui"])
+def test_authorization_requires_true_before_execution(answer):
+    tool = EchoTool()
+    authorize = Mock(return_value=answer)
+
+    result = tool.execute({"text": "hello"}, authorize=authorize)
+
+    assert result == ToolResult(success=False, error="Tool execution denied")
+    authorize.assert_called_once_with({"text": "hello"})
+    assert tool.calls == []
+
+
+@pytest.mark.parametrize(("name", "arguments", "error"), [
+    ("test.unknown", {"text": "hello"}, "Unknown tool"),
+    ("test.echo", {"text": 42}, "Invalid tool arguments"),
+])
+def test_invalid_calls_do_not_request_authorization(name, arguments, error):
+    registry = ToolRegistry()
+    tool = EchoTool()
+    registry.register(tool)
+    authorize = Mock(return_value=True)
+
+    result = registry.execute(name, arguments, authorize=authorize)
+
+    assert result == ToolResult(success=False, error=error)
+    authorize.assert_not_called()
+    assert tool.calls == []
+
+
+def test_authorization_exception_fails_closed_without_sensitive_details(caplog):
+    tool = EchoTool()
+    authorize = Mock(side_effect=RuntimeError("token=secret-value"))
+
+    result = tool.execute({"text": "private-value"}, authorize=authorize)
+
+    assert result == ToolResult(success=False, error="Tool authorization failed")
+    assert tool.calls == []
+    assert not caplog.records
+
+
+@pytest.mark.parametrize("interruption", [KeyboardInterrupt, SystemExit])
+def test_authorization_propagates_control_flow_exceptions(interruption):
+    tool = EchoTool()
+    with pytest.raises(interruption):
+        tool.execute({"text": "hello"}, authorize=Mock(side_effect=interruption))
+    assert tool.calls == []

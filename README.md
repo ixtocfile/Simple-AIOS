@@ -5,6 +5,8 @@ ligne de commande. Linux reste responsable du système et du matériel.
 
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
 configuration, des logs applicatifs et un faux provider pour les tests.
+Les quatre outils de lecture système sont accessibles à la conversation après
+validation de l'appel et autorisation par le Policy Engine.
 
 ## Développement
 
@@ -47,11 +49,14 @@ avec chaque nouveau message pour maintenir le contexte. Ils ne sont ni
 journalisés ni sauvegardés et sont oubliés à la fermeture du CLI.
 
 Une erreur Ollama affiche un message sur stderr et rend l'invite disponible.
-Le tour échoué n'est pas ajouté à l'historique ; les échanges précédents sont
-conservés. Vous pouvez réessayer en saisissant un nouveau message.
+Si elle survient avant un appel d'outil, le tour échoué n'est pas ajouté à
+l'historique. Si l'outil a déjà été traité, son appel et son résultat sont
+conservés, même si la réponse suivante du modèle échoue. Les échanges précédents
+restent disponibles ; aucun outil ni appel au provider n'est relancé automatiquement.
 
-Les réponses du modèle sont affichées comme texte. Aucun outil ni commande
-système n'est exécuté.
+Une réponse contenant un appel JSON strict passe par le circuit d'exécution
+décrit ci-dessous. Les autres réponses sont affichées comme texte ; les
+commandes shell proposées par le modèle ne sont jamais exécutées.
 
 ## Configuration
 
@@ -186,9 +191,18 @@ type incorrect produit un `ToolResult` d'échec avec un message générique.
 Les détails des exceptions et les arguments ne sont pas journalisés ;
 `KeyboardInterrupt` et `SystemExit` continuent de se propager.
 
-L'exécution par le registre reste réservée aux appels Python de confiance ;
-la conversation CLI et le LLM n'appellent pas d'outils. La validation des
-arguments reste distincte de la décision d'autorisation du Policy Engine.
+`Tool.execute` et `ToolRegistry.execute` acceptent aussi le paramètre nommé
+`authorize`, une fonction recevant une copie des arguments validés. Elle est
+appelée après une seule validation et avant l'exécution ; seul un retour
+exactement égal au booléen `True` autorise l'action. Un refus produit
+`Tool execution denied`, une exception ordinaire `Tool authorization failed`.
+Un nom inconnu ou des arguments invalides ne déclenchent pas cette fonction.
+La copie présentée à l'autorisation inclut les valeurs normalisées ou par
+défaut ; la modifier ne change pas les arguments exécutés.
+
+Les appels Python de confiance peuvent omettre ce paramètre. Le CLI le fournit
+systématiquement pour appliquer le Policy Engine et la confirmation utilisateur
+à chaque appel du modèle. Le registre lui-même reste indépendant du CLI.
 
 ## Modèle de risque
 
@@ -246,9 +260,9 @@ pas leurs arguments, ne sollicite pas le LLM et ne recueille aucune confirmation
 `CONFIRM` indique qu'un accord explicite reste nécessaire ; cette décision ne
 vaut pas accord. Le composant de confirmation CLI est décrit ci-dessous.
 Les appels Python de confiance à `Tool.execute` et `ToolRegistry.execute`
-conservent leur fonctionnement actuel. L'enchaînement validation, décision et
-exécution des appels du LLM reste prévu à l'étape 5.2 ; la conversation CLI et
-le LLM n'exécutent toujours pas d'outils.
+conservent leur fonctionnement actuel. La conversation CLI relie désormais
+validation des arguments, décision de policy, éventuelle confirmation et
+exécution, avant de transmettre le résultat au modèle.
 
 ## Confirmation dans le CLI
 
@@ -275,15 +289,15 @@ ne peut pas accorder la confirmation. Un appel impossible à représenter pour
 l'affichage est également refusé avant toute saisie.
 
 Les caractères de contrôle des noms et arguments sont échappés à l'affichage.
-Les arguments et réponses ne sont ni journalisés ni envoyés au LLM. Chaque
-appel réévalue la policy et, si nécessaire, redemande un accord ; aucun accord
-n'est mémorisé pour un autre appel.
+Les arguments et réponses de confirmation ne sont pas journalisés. La saisie
+de confirmation reste locale ; le modèle reçoit uniquement le résultat structuré
+de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
+si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
 action. Les quatre outils existants sont classés `READ` ; les tests de
-confirmation utilisent des outils fictifs. La conversation `python -m aios`
-reste textuelle : elle ne déclenche pas encore d'appels d'outils. Le raccordement
-des décisions et confirmations à leur exécution reste prévu à l'étape 5.2.
+confirmation utilisent des outils fictifs. Le CLI appelle ce composant avec les
+arguments déjà validés et normalisés, juste avant l'exécution de l'outil.
 
 ## Format JSON des appels d'outils
 
@@ -325,13 +339,52 @@ print(call.tool)       # process.list
 print(call.arguments)  # {'limit': 10}
 ```
 
-Cette étape valide le format de l'appel. Elle ne recherche pas l'outil dans le
+Ce parseur valide le format de l'appel. Il ne recherche pas l'outil dans le
 registre et ne valide pas ses arguments spécifiques : un nom inconnu ou des
 arguments inadaptés à un outil peuvent donc passer cette validation de format.
-Elle n'accorde aucune autorisation, ne demande aucune confirmation et n'exécute
-rien. La conversation CLI continue d'afficher les réponses du LLM comme du texte ;
-le raccordement au registre, aux validateurs et au Policy Engine reste prévu à
-l'étape 5.2.
+Il n'accorde aucune autorisation, ne demande aucune confirmation et n'exécute
+rien. Le CLI enchaîne les vérifications décrites ci-dessous.
+
+## Exécution d'un appel dans la conversation
+
+Le CLI enregistre `system.info`, `system.memory`, `system.disk` et `process.list`
+au début de chaque session, sans les exécuter. Lorsqu'une première réponse du
+modèle est un appel JSON valide, il suit cet ordre :
+
+1. Rechercher l'outil enregistré et valider ses arguments spécifiques.
+2. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
+3. Exécuter uniquement l'appel autorisé et recueillir son `ToolResult`.
+4. Ajouter l'appel de l'assistant et le résultat à la conversation, puis interroger
+   le modèle une fois pour obtenir la réponse à afficher.
+
+Le résultat est un message JSON généré par l'application, avec le rôle `user`
+pour conserver le contrat textuel de `LLMProvider`. Il contient `tool_result`
+avec le nom de l'outil et les trois champs `success`, `data` et `error`. Exemple
+de retour pour un outil inconnu :
+
+```json
+{"tool_result":{"tool":"unknown.tool","success":false,"data":null,"error":"Unknown tool"}}
+```
+
+Un appel inconnu, des arguments invalides, un refus ou une erreur d'exécution
+produisent également un retour au modèle, sans données partielles ni détails
+d'exception. Un résultat impossible à sérialiser en JSON produit
+`Invalid tool result`, sans réexécuter l'outil.
+
+Après les espaces initiaux, une réponse commençant par `{` ou `[` est traitée
+comme une tentative d'appel structuré. Si son format est invalide, le modèle
+reçoit `Invalid tool call` avec `tool: null`, sans consultation du registre ni
+exécution. Le texte ordinaire et les exemples JSON dans du texte ou des blocs
+Markdown restent affichés tels quels ; aucun appel n'en est extrait.
+
+Cette étape traite au plus un appel d'outil par demande. La réponse obtenue
+après le résultat est affichée telle quelle, même si elle contient un nouvel
+appel JSON. La boucle d'appels reste prévue à l'étape 5.3.
+
+Aucun catalogue ou prompt système n'est encore injecté. Pour essayer le circuit
+avec Ollama, demandez par exemple au modèle de répondre uniquement par
+`{"tool":"system.info","arguments":{}}`. Le modèle doit respecter ce format
+strict. Les tests automatisés utilisent `FakeLLMProvider`, sans vrai LLM.
 
 ## Premier outil : system.info
 

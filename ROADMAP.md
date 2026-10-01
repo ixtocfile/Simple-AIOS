@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 5.1 terminée. Aucune étape en cours ; prochaine étape : 5.2,
+État : étape 5.2 terminée. Aucune étape en cours ; prochaine étape : 5.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -104,6 +104,15 @@ Une réponse de FakeLLMProvider est parsée sans consultation du registre,
 décision de policy, confirmation ni exécution. La conversation reste textuelle ;
 le raccordement des appels d'outils reste prévu à l'étape 5.2.
 
+Validation de l'étape 5.2 sous Python 3.12 : `python -m pytest -q` : 399 tests
+réussis. Circuit CLI complet avec FakeLLMProvider : format strict, registre,
+validation unique des arguments, policy, confirmation éventuelle, exécution et
+retour JSON au modèle vérifiés. Refus, erreurs génériques, résultats non
+sérialisables, absence de contenu sensible dans les logs et conservation du
+résultat après une erreur du provider testés. Un essai réel avec `system.info`
+a confirmé le retour des cinq champs au faux provider. Un seul appel d'outil
+est traité par demande ; aucune boucle ni étape suivante ajoutée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -137,7 +146,7 @@ le raccordement des appels d'outils reste prévu à l'étape 5.2.
 ## Phase 5 — LLM et outils
 
 - [done] 5.1 — Format JSON des appels d'outils, validation stricte.
-- [todo] 5.2 — Validation, policy, exécution et retour du résultat au modèle.
+- [done] 5.2 — Validation, policy, exécution et retour du résultat au modèle.
 - [todo] 5.3 — Boucle limitée à cinq appels d'outils par requête.
 
 ## Phase 6 — systemd

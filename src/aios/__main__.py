@@ -1,6 +1,7 @@
 """Entry point for ``python -m aios``."""
 
 import argparse
+from dataclasses import asdict
 from importlib.metadata import version
 import json
 import logging
@@ -11,6 +12,12 @@ from aios.config import load_config
 from aios.llm import LLMProvider, Message
 from aios.ollama import OllamaError, OllamaProvider
 from aios.policy import PolicyDecision, PolicyEngine
+from aios.process_list import ProcessListTool
+from aios.system_disk import SystemDiskTool
+from aios.system_info import SystemInfoTool
+from aios.system_memory import SystemMemoryTool
+from aios.tool_calls import ToolCallError, parse_tool_call
+from aios.tools import ToolRegistry, ToolResult
 
 
 def authorize_tool_call(
@@ -51,10 +58,45 @@ def authorize_tool_call(
     return accepted
 
 
+def _build_tool_registry() -> ToolRegistry:
+    registry = ToolRegistry()
+    for tool in (SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool()):
+        registry.register(tool)
+    return registry
+
+
+def _tool_feedback(reply: str, registry: ToolRegistry, policy: PolicyEngine) -> Message | None:
+    try:
+        call = parse_tool_call(reply)
+    except ToolCallError:
+        if not reply.lstrip().startswith(("{", "[")):
+            return None
+        name = None
+        result = ToolResult(success=False, error="Invalid tool call")
+    else:
+        name = call.tool
+        result = registry.execute(
+            name, call.arguments,
+            authorize=lambda arguments: authorize_tool_call(policy, name, arguments),
+        )
+
+    try:
+        content = json.dumps(
+            {"tool_result": {"tool": name, **asdict(result)}}, allow_nan=False,
+        )
+    except Exception:
+        failure = ToolResult(success=False, error="Invalid tool result")
+        content = json.dumps({"tool_result": {"tool": name, **asdict(failure)}})
+    # Keep the existing text-chat contract; this is application-generated data.
+    return {"role": "user", "content": content}
+
+
 def _run_shell(provider: LLMProvider) -> None:
     print("Simple-AIOS")
     messages: list[Message] = []
     logger = logging.getLogger("aios")
+    registry = _build_tool_registry()
+    policy = PolicyEngine(registry)
 
     while True:
         try:
@@ -82,6 +124,12 @@ def _run_shell(provider: LLMProvider) -> None:
             pending: list[Message] = [*messages, {"role": "user", "content": command}]
             try:
                 reply = provider.chat(pending)
+                feedback = _tool_feedback(reply, registry, policy)
+                if feedback is not None:
+                    pending = [*pending, {"role": "assistant", "content": reply}, feedback]
+                    # Preserve the outcome even if the follow-up response fails.
+                    messages = pending
+                    reply = provider.chat(pending)
             except OllamaError as error:
                 logger.error("Provider error (%s)", type(error).__name__)
                 print(
