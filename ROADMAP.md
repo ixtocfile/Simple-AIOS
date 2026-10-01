@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 4.1 terminée. Aucune étape en cours ; prochaine étape : 4.2,
+État : étape 4.2 terminée. Aucune étape en cours ; prochaine étape : 4.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -78,6 +78,14 @@ invalides à l'enregistrement vérifiés. Consultation des niveaux sans exécuti
 testée. Cette étape ajoute des métadonnées uniquement ; les décisions du Policy
 Engine et la confirmation dans le CLI restent à implémenter aux étapes suivantes.
 
+Validation de l'étape 4.2 sous Python 3.12 : `python -m pytest -q` : 268 tests
+réussis. Décisions `ALLOW`, `CONFIRM` et `DENY` depuis les risques du registre,
+refus des outils inconnus, des noms et niveaux invalides, classification par
+défaut et relecture des niveaux à chaque appel vérifiés. Le moteur ne déclenche
+ni validation des arguments, ni exécution d'outil, ni demande de confirmation.
+Les quatre outils existants sont reconnus comme `ALLOW` sans être exécutés.
+La confirmation CLI et le raccordement au LLM restent aux étapes suivantes.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -105,7 +113,7 @@ Engine et la confirmation dans le CLI restent à implémenter aux étapes suivan
 ## Phase 4 — Policy Engine
 
 - [done] 4.1 — Niveaux de risque READ, CONFIRM et DENY pour chaque outil.
-- [todo] 4.2 — Policy Engine : décisions ALLOW, CONFIRM et DENY, avec tests.
+- [done] 4.2 — Policy Engine : décisions ALLOW, CONFIRM et DENY, avec tests.
 - [todo] 4.3 — Confirmation explicite dans le CLI, refus par défaut.
 
 ## Phase 5 — LLM et outils

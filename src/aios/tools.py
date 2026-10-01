@@ -7,7 +7,7 @@ from enum import Enum
 
 
 class RiskLevel(Enum):
-    """Tool classification; authorization belongs to the future Policy Engine."""
+    """Tool classification; authorization belongs to the Policy Engine."""
 
     READ = "READ"
     CONFIRM = "CONFIRM"

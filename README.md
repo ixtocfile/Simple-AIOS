@@ -187,8 +187,8 @@ Les détails des exceptions et les arguments ne sont pas journalisés ;
 `KeyboardInterrupt` et `SystemExit` continuent de se propager.
 
 Le registre sert aux appels Python de confiance et n'est pas raccordé au CLI
-ou au LLM. La validation des arguments ne remplace pas le futur contrôle
-d'autorisation par le Policy Engine.
+ou au LLM. La validation des arguments reste distincte de la décision
+d'autorisation du Policy Engine.
 
 ## Modèle de risque
 
@@ -208,11 +208,47 @@ déclarent `RiskLevel.READ`. Le registre valide le type du niveau à
 l'enregistrement : une simple chaîne comme `"READ"` est refusée. `get` et
 `list_tools` rendent ce niveau accessible sans exécuter l'outil.
 
-L'étape 4.1 fournit uniquement la classification et sa validation. Les appels
-Python de confiance via `execute` conservent leur fonctionnement actuel : le
-niveau ne déclenche encore ni blocage ni demande de confirmation. Les décisions
-du Policy Engine sont prévues à l'étape 4.2, puis la confirmation dans le CLI à
-l'étape 4.3. Le CLI et le LLM ne sont toujours pas raccordés aux outils.
+Le niveau de risque est une métadonnée utilisée par le Policy Engine pour
+produire une décision d'autorisation.
+
+## Policy Engine
+
+`aios.policy.PolicyEngine(registry)` reçoit un `ToolRegistry` de confiance.
+Sa méthode `evaluate(tool_name)` renvoie un membre de `PolicyDecision` :
+
+| Risque de l'outil enregistré | Décision |
+| --- | --- |
+| `RiskLevel.READ` | `PolicyDecision.ALLOW` |
+| `RiskLevel.CONFIRM` | `PolicyDecision.CONFIRM` |
+| `RiskLevel.DENY` | `PolicyDecision.DENY` |
+| Outil inconnu, nom de type incorrect ou niveau invalide | `PolicyDecision.DENY` |
+
+Le moteur relit le niveau dans le registre à chaque évaluation. Il n'accepte
+pas de niveau de risque ni d'accord utilisateur fournis dans un appel d'outil
+ou une réponse du LLM. Les chaînes comme `"READ"` ne remplacent pas les membres
+de `RiskLevel` et produisent `DENY` si elles sont introduites après
+l'enregistrement.
+
+```python
+from aios.policy import PolicyEngine
+from aios.system_info import SystemInfoTool
+from aios.tools import ToolRegistry
+
+registry = ToolRegistry()
+registry.register(SystemInfoTool())
+policy = PolicyEngine(registry)
+decision = policy.evaluate("system.info")
+print(decision.value)  # ALLOW, sans exécuter l'outil
+```
+
+Le moteur produit uniquement une décision : il n'exécute aucun outil, ne valide
+pas leurs arguments, ne sollicite pas le LLM et ne recueille aucune confirmation.
+`CONFIRM` indique qu'un accord explicite reste nécessaire ; cette décision ne
+vaut pas accord. L'interface de confirmation est prévue à l'étape 4.3.
+Les appels Python de confiance à `Tool.execute` et `ToolRegistry.execute`
+conservent leur fonctionnement actuel. L'enchaînement validation, décision et
+exécution des appels du LLM reste prévu à l'étape 5.2 ; le CLI et le LLM ne sont
+toujours pas raccordés aux outils.
 
 ## Premier outil : system.info
 
