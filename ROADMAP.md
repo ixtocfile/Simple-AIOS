@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 4.3 terminée. Aucune étape en cours ; prochaine étape : 5.1,
+État : étape 5.1 terminée. Aucune étape en cours ; prochaine étape : 5.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -95,6 +95,15 @@ la policy et absence de réutilisation d'un accord testés. Un essai dans un
 terminal a confirmé le refus d'une entrée vide et l'acceptation de `oui`.
 La conversation reste textuelle ; aucun appel d'outil du LLM ajouté.
 
+Validation de l'étape 5.1 sous Python 3.12 : `python -m pytest -q` : 365 tests
+réussis. Format JSON unique `tool` / `arguments`, champs et types stricts,
+refus des doublons à tous les niveaux, des nombres non finis et des documents
+entourés de texte ou multiples vérifiés. Limites de taille et de profondeur,
+conservation des valeurs, erreurs génériques et absence de logs testées.
+Une réponse de FakeLLMProvider est parsée sans consultation du registre,
+décision de policy, confirmation ni exécution. La conversation reste textuelle ;
+le raccordement des appels d'outils reste prévu à l'étape 5.2.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -127,7 +136,7 @@ La conversation reste textuelle ; aucun appel d'outil du LLM ajouté.
 
 ## Phase 5 — LLM et outils
 
-- [todo] 5.1 — Format JSON des appels d'outils, validation stricte.
+- [done] 5.1 — Format JSON des appels d'outils, validation stricte.
 - [todo] 5.2 — Validation, policy, exécution et retour du résultat au modèle.
 - [todo] 5.3 — Boucle limitée à cinq appels d'outils par requête.
 

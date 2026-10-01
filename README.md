@@ -285,6 +285,54 @@ confirmation utilisent des outils fictifs. La conversation `python -m aios`
 reste textuelle : elle ne déclenche pas encore d'appels d'outils. Le raccordement
 des décisions et confirmations à leur exécution reste prévu à l'étape 5.2.
 
+## Format JSON des appels d'outils
+
+`aios.tool_calls.parse_tool_call(text)` valide un appel unique et renvoie un
+`ToolCall` avec les attributs `tool` et `arguments`. Le texte doit contenir
+exactement un objet JSON de cette forme :
+
+```json
+{"tool": "system.disk", "arguments": {"path": "/"}}
+```
+
+| Champ obligatoire | Valeur acceptée |
+| --- | --- |
+| `tool` | Chaîne non vide, imprimable, sans aucun espace ni caractère de contrôle. |
+| `arguments` | Objet JSON, éventuellement vide, avec des valeurs JSON usuelles. |
+
+Les deux champs sont obligatoires ; aucun autre champ n'est accepté à la racine,
+y compris `risk_level` ou `confirmed`. L'ordre des clés et les espaces JSON
+autour de l'objet sont libres. Le nom de l'outil n'est ni corrigé ni normalisé.
+
+La validation s'appuie sur le module
+[`json` de Python](https://docs.python.org/3.12/library/json.html). Elle refuse
+les clés dupliquées à tous les niveaux, `NaN`, les infinis et les débordements
+lors de la conversion en flottant. Un tableau d'appels, du texte autour du
+JSON, un bloc Markdown ou plusieurs objets successifs sont refusés : le parseur
+ne tente pas d'extraire ou de réparer un appel.
+
+Le texte est limité à 65 536 caractères avant décodage. La profondeur maximale
+est de 32 niveaux d'objets ou de tableaux ; l'objet racine et `arguments`
+occupent déjà deux niveaux. Une entrée invalide produit une `ToolCallError`
+(sous-classe de `ValueError`) avec le message générique `Invalid tool call`,
+sans recopier le texte reçu ni le journaliser.
+
+```python
+from aios.tool_calls import parse_tool_call
+
+call = parse_tool_call('{"tool":"process.list","arguments":{"limit":10}}')
+print(call.tool)       # process.list
+print(call.arguments)  # {'limit': 10}
+```
+
+Cette étape valide le format de l'appel. Elle ne recherche pas l'outil dans le
+registre et ne valide pas ses arguments spécifiques : un nom inconnu ou des
+arguments inadaptés à un outil peuvent donc passer cette validation de format.
+Elle n'accorde aucune autorisation, ne demande aucune confirmation et n'exécute
+rien. La conversation CLI continue d'afficher les réponses du LLM comme du texte ;
+le raccordement au registre, aux validateurs et au Policy Engine reste prévu à
+l'étape 5.2.
+
 ## Premier outil : system.info
 
 `aios.system_info.SystemInfoTool` lit les informations de base du système Linux.
