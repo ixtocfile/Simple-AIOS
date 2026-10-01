@@ -20,6 +20,9 @@ from aios.tool_calls import ToolCallError, parse_tool_call
 from aios.tools import ToolRegistry, ToolResult
 
 
+MAX_TOOL_CALLS_PER_REQUEST = 5
+
+
 def authorize_tool_call(
     policy: PolicyEngine, tool_name: str, arguments: dict[str, object],
 ) -> bool:
@@ -124,12 +127,21 @@ def _run_shell(provider: LLMProvider) -> None:
             pending: list[Message] = [*messages, {"role": "user", "content": command}]
             try:
                 reply = provider.chat(pending)
-                feedback = _tool_feedback(reply, registry, policy)
-                if feedback is not None:
+                for _ in range(MAX_TOOL_CALLS_PER_REQUEST):
+                    feedback = _tool_feedback(reply, registry, policy)
+                    if feedback is None:
+                        break
                     pending = [*pending, {"role": "assistant", "content": reply}, feedback]
                     # Preserve the outcome even if the follow-up response fails.
                     messages = pending
                     reply = provider.chat(pending)
+                else:
+                    # Inspect only: a sixth attempt must never reach an execution hook.
+                    if reply.lstrip().startswith(("{", "[")):
+                        reply = (
+                            f"Limite de {MAX_TOOL_CALLS_PER_REQUEST} appels d'outils "
+                            "atteinte pour cette requête."
+                        )
             except OllamaError as error:
                 logger.error("Provider error (%s)", type(error).__name__)
                 print(

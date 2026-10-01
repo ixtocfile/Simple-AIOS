@@ -501,39 +501,173 @@ def test_cli_returns_safe_tool_failures_and_stays_available(
     assert "secret-value" not in logs + captured.out + captured.err + repr(provider.calls)
 
 
-def test_cli_follow_up_is_displayed_without_another_tool_execution(cli_session, cli_tool, capsys):
-    reply = tool_reply()
-    provider = FakeLLMProvider([reply, reply])
+@pytest.mark.parametrize("count", [2, 5])
+def test_cli_chains_tool_calls_with_all_results_until_a_text_reply(
+    cli_session, cli_tool, capsys, count,
+):
+    arguments = [{"target": f"target-{index}"} for index in range(count)]
+    replies = [tool_reply(values) for values in arguments]
+    provider = FakeLLMProvider([*replies, "Réponse finale", tool_reply()])
 
     assert cli_session(provider, ["Demande", "/exit"]) == 0
 
-    assert len(provider.calls) == 2
+    assert len(provider.calls) == count + 1
+    expected = [{"role": "user", "content": "Demande"}]
+    assert provider.calls[0] == expected
+    for index, reply in enumerate(replies):
+        feedback = provider.calls[index + 1][-1]
+        assert feedback["role"] == "user"
+        assert json.loads(feedback["content"]) == {"tool_result": {
+            "tool": "test.action", "success": True, "data": arguments[index], "error": None,
+        }}
+        expected = [*expected, {"role": "assistant", "content": reply}, feedback]
+        assert provider.calls[index + 1] == expected
+    assert cli_tool.calls == arguments
+    assert capsys.readouterr().out == "Simple-AIOS\nRéponse finale\n"
+
+
+@pytest.mark.parametrize("risk", [RiskLevel.READ, RiskLevel.CONFIRM])
+def test_cli_blocks_a_sixth_tool_call_before_validation_or_confirmation(
+    cli_session, cli_tool, monkeypatch, capsys, tmp_path, risk,
+):
+    cli_tool.risk_level = risk
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    validate = Mock(wraps=cli_tool.validate_arguments)
+    monkeypatch.setattr(cli_tool, "validate_arguments", validate)
+    arguments = [{"target": f"private-target-{index}"} for index in range(6)]
+    provider = FakeLLMProvider([tool_reply(values) for values in arguments])
+    confirmations = ["oui"] * 5 if risk is RiskLevel.CONFIRM else []
+
+    assert cli_session(provider, ["Demande", *confirmations, "/exit"]) == 0
+
+    assert len(provider.calls) == 6
+    assert cli_tool.calls == arguments[:5]
+    assert validate.call_count == 5
+    captured = capsys.readouterr()
+    assert captured.out.endswith("Limite de 5 appels d'outils atteinte pour cette requête.\n")
+    assert captured.out.count("Action à confirmer") == len(confirmations)
+    assert "private-target-5" not in captured.out
+    assert captured.err == ""
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "private-target" not in logs
+    assert len(logs.splitlines()) == 2
+
+
+def test_cli_resets_budget_for_a_new_request_and_keeps_history_after_the_limit(
+    cli_session, cli_tool, capsys,
+):
+    first = [tool_reply({"target": f"first-{index}"}) for index in range(5)]
+    blocked = tool_reply({"target": "must-not-execute"})
+    second = [tool_reply({"target": f"second-{index}"}) for index in range(5)]
+    provider = FakeLLMProvider([*first, blocked, *second, "Terminé"])
+
+    assert cli_session(provider, ["Première demande", "/help", "", "Deuxième demande", "/exit"]) == 0
+
+    assert len(provider.calls) == 12
+    assert cli_tool.calls == [
+        {"target": f"{request}-{index}"}
+        for request in ("first", "second") for index in range(5)
+    ]
+    limit = "Limite de 5 appels d'outils atteinte pour cette requête."
+    assert provider.calls[6] == [
+        *provider.calls[5], {"role": "assistant", "content": limit},
+        {"role": "user", "content": "Deuxième demande"},
+    ]
+    assert "must-not-execute" not in repr(provider.calls)
+    captured = capsys.readouterr()
+    assert captured.out == f"Simple-AIOS\n{limit}\n{HELP}Terminé\n"
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(("reply", "risk", "error", "executions"), [
+    ('{"tool":', RiskLevel.READ, "Invalid tool call", 0),
+    ('{"tool":"unknown.tool","arguments":{}}', RiskLevel.READ, "Unknown tool", 0),
+    (tool_reply({"target": 42}), RiskLevel.READ, "Invalid tool arguments", 0),
+    (tool_reply(), RiskLevel.DENY, "Tool execution denied", 0),
+    (tool_reply(), RiskLevel.READ, "Tool execution failed", 5),
+])
+def test_cli_counts_invalid_denied_and_failed_attempts_toward_the_limit(
+    cli_session, cli_tool, monkeypatch, capsys, reply, risk, error, executions,
+):
+    cli_tool.risk_level = risk
+    execute = Mock(side_effect=RuntimeError("token=secret-value"))
+    monkeypatch.setattr(cli_tool, "_execute", execute)
+    provider = FakeLLMProvider([reply] * 6)
+
+    assert cli_session(provider, ["Demande", "/exit"]) == 0
+
+    assert len(provider.calls) == 6
+    for call in provider.calls[1:]:
+        result = json.loads(call[-1]["content"])["tool_result"]
+        assert result["success"] is False
+        assert result["data"] is None
+        assert result["error"] == error
+    assert execute.call_count == executions
+    captured = capsys.readouterr()
+    assert captured.out.endswith("Limite de 5 appels d'outils atteinte pour cette requête.\n")
+    assert "secret-value" not in captured.out + captured.err + repr(provider.calls)
+
+
+def test_cli_requests_a_new_confirmation_for_each_call_in_the_loop(
+    cli_session, cli_tool, monkeypatch, capsys,
+):
+    cli_tool.risk_level = RiskLevel.CONFIRM
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    provider = FakeLLMProvider([tool_reply()] * 3 + ["Terminé"])
+
+    assert cli_session(provider, ["Demande", "oui", "non", "oui", "/exit"]) == 0
+
+    assert len(provider.calls) == 4
+    results = [json.loads(call[-1]["content"])["tool_result"] for call in provider.calls[1:]]
+    assert [result["success"] for result in results] == [True, False, True]
+    assert results[1]["error"] == "Tool execution denied"
+    assert cli_tool.calls == [{"target": "default-target"}] * 2
+    assert capsys.readouterr().out.count("Action à confirmer") == 3
+
+
+def test_cli_rechecks_policy_for_every_call_in_the_loop(cli_session, cli_tool, monkeypatch):
+    execute = cli_tool._execute
+
+    def revoke_after_execution(arguments):
+        result = execute(arguments)
+        cli_tool.risk_level = RiskLevel.DENY
+        return result
+
+    monkeypatch.setattr(cli_tool, "_execute", revoke_after_execution)
+    provider = FakeLLMProvider([tool_reply(), tool_reply(), "Terminé"])
+
+    assert cli_session(provider, ["Demande", "/exit"]) == 0
+
+    assert len(provider.calls) == 3
     assert cli_tool.calls == [{"target": "default-target"}]
-    assert capsys.readouterr().out == f"Simple-AIOS\n{reply}\n"
+    denied = json.loads(provider.calls[2][-1]["content"])["tool_result"]
+    assert denied["success"] is False
+    assert denied["error"] == "Tool execution denied"
 
 
+@pytest.mark.parametrize("completed_calls", [1, 3, 5])
 def test_cli_preserves_tool_outcome_after_follow_up_provider_failure(
-    cli_session, cli_tool, capsys, tmp_path,
+    cli_session, cli_tool, capsys, tmp_path, completed_calls,
 ):
     class FailingFollowUpProvider(FakeLLMProvider):
         def chat(self, messages):
             reply = super().chat(messages)
-            if len(self.calls) == 2:
+            if len(self.calls) == completed_calls + 1:
                 raise OllamaError("token=secret-value")
             return reply
 
-    provider = FailingFollowUpProvider([tool_reply(), "unused", "Disponible"])
+    provider = FailingFollowUpProvider([tool_reply()] * completed_calls + ["unused", "Disponible"])
 
     assert cli_session(provider, ["Demande", "Suite", "/exit"]) == 0
 
-    assert len(provider.calls) == 3
-    assert provider.calls[2] == [
-        *provider.calls[1], {"role": "user", "content": "Suite"},
+    assert len(provider.calls) == completed_calls + 2
+    assert provider.calls[-1] == [
+        *provider.calls[-2], {"role": "user", "content": "Suite"},
     ]
-    result = json.loads(provider.calls[2][-2]["content"])["tool_result"]
+    result = json.loads(provider.calls[-1][-2]["content"])["tool_result"]
     assert result["success"] is True
     assert result["data"] == {"target": "default-target"}
-    assert cli_tool.calls == [{"target": "default-target"}]
+    assert cli_tool.calls == [{"target": "default-target"}] * completed_calls
     captured = capsys.readouterr()
     assert captured.out == "Simple-AIOS\nDisponible\n"
     assert "Impossible d'obtenir une réponse du LLM." in captured.err

@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 5.2 terminée. Aucune étape en cours ; prochaine étape : 5.3,
+État : étape 5.3 terminée. Aucune étape en cours ; prochaine étape : 6.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -113,6 +113,16 @@ résultat après une erreur du provider testés. Un essai réel avec `system.inf
 a confirmé le retour des cinq champs au faux provider. Un seul appel d'outil
 est traité par demande ; aucune boucle ni étape suivante ajoutée.
 
+Validation de l'étape 5.3 sous Python 3.12 : `python -m pytest -q` : 412 tests
+réussis. Enchaînement des appels avec leurs résultats, arrêt sur réponse
+textuelle et limite de cinq tentatives par requête vérifiés avec FakeLLMProvider.
+Les appels invalides, refusés ou échoués consomment aussi le budget. Un sixième
+appel est bloqué avant validation, confirmation ou exécution ; une réponse
+textuelle après le cinquième résultat reste possible. Remise à zéro du compteur
+à la demande suivante, relecture de la policy, confirmations indépendantes,
+historique après limite ou erreur du provider et absence de données sensibles
+dans les logs testés. Aucune étape suivante ajoutée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -147,7 +157,7 @@ est traité par demande ; aucune boucle ni étape suivante ajoutée.
 
 - [done] 5.1 — Format JSON des appels d'outils, validation stricte.
 - [done] 5.2 — Validation, policy, exécution et retour du résultat au modèle.
-- [todo] 5.3 — Boucle limitée à cinq appels d'outils par requête.
+- [done] 5.3 — Boucle limitée à cinq appels d'outils par requête.
 
 ## Phase 6 — systemd
 

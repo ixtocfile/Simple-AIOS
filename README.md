@@ -51,8 +51,9 @@ journalisés ni sauvegardés et sont oubliés à la fermeture du CLI.
 Une erreur Ollama affiche un message sur stderr et rend l'invite disponible.
 Si elle survient avant un appel d'outil, le tour échoué n'est pas ajouté à
 l'historique. Si l'outil a déjà été traité, son appel et son résultat sont
-conservés, même si la réponse suivante du modèle échoue. Les échanges précédents
-restent disponibles ; aucun outil ni appel au provider n'est relancé automatiquement.
+conservés, même si une réponse suivante du modèle échoue. Les échanges précédents
+restent disponibles ; après cette erreur du provider, aucun outil ni appel au
+provider n'est relancé automatiquement.
 
 Une réponse contenant un appel JSON strict passe par le circuit d'exécution
 décrit ci-dessous. Les autres réponses sont affichées comme texte ; les
@@ -348,14 +349,15 @@ rien. Le CLI enchaîne les vérifications décrites ci-dessous.
 ## Exécution d'un appel dans la conversation
 
 Le CLI enregistre `system.info`, `system.memory`, `system.disk` et `process.list`
-au début de chaque session, sans les exécuter. Lorsqu'une première réponse du
+au début de chaque session, sans les exécuter. Lorsqu'une réponse du
 modèle est un appel JSON valide, il suit cet ordre :
 
 1. Rechercher l'outil enregistré et valider ses arguments spécifiques.
 2. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
 3. Exécuter uniquement l'appel autorisé et recueillir son `ToolResult`.
 4. Ajouter l'appel de l'assistant et le résultat à la conversation, puis interroger
-   le modèle une fois pour obtenir la réponse à afficher.
+   le modèle à nouveau. Une réponse textuelle est affichée ; un nouvel appel JSON
+   reprend ces vérifications dans la limite décrite ci-dessous.
 
 Le résultat est un message JSON généré par l'application, avec le rôle `user`
 pour conserver le contrat textuel de `LLMProvider`. Il contient `tool_result`
@@ -377,9 +379,20 @@ reçoit `Invalid tool call` avec `tool: null`, sans consultation du registre ni
 exécution. Le texte ordinaire et les exemples JSON dans du texte ou des blocs
 Markdown restent affichés tels quels ; aucun appel n'en est extrait.
 
-Cette étape traite au plus un appel d'outil par demande. La réponse obtenue
-après le résultat est affichée telle quelle, même si elle contient un nouvel
-appel JSON. La boucle d'appels reste prévue à l'étape 5.3.
+La boucle traite au plus **cinq appels d'outils par requête utilisateur**. Les
+tentatives au format invalide, les outils inconnus, les arguments invalides,
+les refus et les erreurs comptent également dans cette limite. Chaque appel
+revalide les arguments et réévalue la policy ; une confirmation précédente
+n'autorise jamais l'appel suivant. Le compteur repart à zéro pour chaque nouveau
+message saisi à `ai>`.
+
+Après le cinquième résultat, un dernier appel au modèle permet d'obtenir une
+réponse textuelle. Une nouvelle tentative d'appel structuré n'est ni validée,
+ni confirmée, ni exécutée : le CLI affiche « Limite de 5 appels d'outils atteinte
+pour cette requête. » et rend l'invite disponible. Ce message remplace l'appel
+bloqué dans l'historique, qui conserve les cinq appels traités et leurs résultats.
+Une requête entraîne donc au plus six appels au provider. Une réponse textuelle
+ou une erreur du provider arrête la boucle plus tôt.
 
 Aucun catalogue ou prompt système n'est encore injecté. Pour essayer le circuit
 avec Ollama, demandez par exemple au modèle de répondre uniquement par
