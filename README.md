@@ -186,9 +186,9 @@ type incorrect produit un `ToolResult` d'échec avec un message générique.
 Les détails des exceptions et les arguments ne sont pas journalisés ;
 `KeyboardInterrupt` et `SystemExit` continuent de se propager.
 
-Le registre sert aux appels Python de confiance et n'est pas raccordé au CLI
-ou au LLM. La validation des arguments reste distincte de la décision
-d'autorisation du Policy Engine.
+L'exécution par le registre reste réservée aux appels Python de confiance ;
+la conversation CLI et le LLM n'appellent pas d'outils. La validation des
+arguments reste distincte de la décision d'autorisation du Policy Engine.
 
 ## Modèle de risque
 
@@ -244,11 +244,46 @@ print(decision.value)  # ALLOW, sans exécuter l'outil
 Le moteur produit uniquement une décision : il n'exécute aucun outil, ne valide
 pas leurs arguments, ne sollicite pas le LLM et ne recueille aucune confirmation.
 `CONFIRM` indique qu'un accord explicite reste nécessaire ; cette décision ne
-vaut pas accord. L'interface de confirmation est prévue à l'étape 4.3.
+vaut pas accord. Le composant de confirmation CLI est décrit ci-dessous.
 Les appels Python de confiance à `Tool.execute` et `ToolRegistry.execute`
 conservent leur fonctionnement actuel. L'enchaînement validation, décision et
-exécution des appels du LLM reste prévu à l'étape 5.2 ; le CLI et le LLM ne sont
-toujours pas raccordés aux outils.
+exécution des appels du LLM reste prévu à l'étape 5.2 ; la conversation CLI et
+le LLM n'exécutent toujours pas d'outils.
+
+## Confirmation dans le CLI
+
+`aios.__main__.authorize_tool_call(policy, tool_name, arguments)` traduit une
+décision du Policy Engine en un booléen pour l'appel présenté :
+
+| Décision | Comportement |
+| --- | --- |
+| `ALLOW` | Renvoie `True` sans demander de saisie. |
+| `CONFIRM` | Affiche l'outil et ses arguments, puis demande un accord explicite. |
+| `DENY` ou décision inattendue | Affiche « Action refusée. » et renvoie `False` sans saisie. |
+
+Exemple d'invite avec un outil fictif classé `CONFIRM` :
+
+```text
+Action à confirmer : {"outil": "test.action", "arguments": {"target": "demo"}}
+Confirmer cette action ? Tapez oui [oui/NON] :
+```
+
+Seule la réponse `oui` est acceptée, sans distinction de casse et après retrait
+des espaces autour. Entrée vide, autre réponse, EOF, Ctrl+C ou erreur de lecture
+renvoient `False`. Une entrée non interactive, notamment un pipe ou un fichier,
+ne peut pas accorder la confirmation. Un appel impossible à représenter pour
+l'affichage est également refusé avant toute saisie.
+
+Les caractères de contrôle des noms et arguments sont échappés à l'affichage.
+Les arguments et réponses ne sont ni journalisés ni envoyés au LLM. Chaque
+appel réévalue la policy et, si nécessaire, redemande un accord ; aucun accord
+n'est mémorisé pour un autre appel.
+
+Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
+action. Les quatre outils existants sont classés `READ` ; les tests de
+confirmation utilisent des outils fictifs. La conversation `python -m aios`
+reste textuelle : elle ne déclenche pas encore d'appels d'outils. Le raccordement
+des décisions et confirmations à leur exécution reste prévu à l'étape 5.2.
 
 ## Premier outil : system.info
 

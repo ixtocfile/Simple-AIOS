@@ -2,6 +2,7 @@
 
 import argparse
 from importlib.metadata import version
+import json
 import logging
 import sys
 
@@ -9,6 +10,45 @@ from aios.app_logging import close_logging, configure_logging
 from aios.config import load_config
 from aios.llm import LLMProvider, Message
 from aios.ollama import OllamaError, OllamaProvider
+from aios.policy import PolicyDecision, PolicyEngine
+
+
+def authorize_tool_call(
+    policy: PolicyEngine, tool_name: str, arguments: dict[str, object],
+) -> bool:
+    """Apply a policy decision in the terminal, without executing the tool."""
+    decision = policy.evaluate(tool_name)
+    if decision is PolicyDecision.ALLOW:
+        return True
+    if decision is not PolicyDecision.CONFIRM:
+        print("Action refusée.")
+        return False
+
+    accepted = False
+    try:
+        if not sys.stdin.isatty():
+            print("Confirmation indisponible : terminal interactif requis.")
+        else:
+            if not isinstance(arguments, dict) or any(
+                not isinstance(key, str) for key in arguments
+            ):
+                raise ValueError("Arguments must be a string-keyed dictionary")
+            # Escape control characters so arguments cannot rewrite the prompt.
+            preview = json.dumps(
+                {"outil": tool_name, "arguments": arguments},
+                ensure_ascii=True, allow_nan=False,
+            )
+            print(f"Action à confirmer : {preview}")
+            answer = input("Confirmer cette action ? Tapez oui [oui/NON] : ")
+            accepted = answer.strip().casefold() == "oui"
+    except (EOFError, KeyboardInterrupt):
+        print()
+    except (OSError, TypeError, ValueError):
+        # An unreadable confirmation or an unrepresentable action is refused.
+        pass
+    if not accepted:
+        print("Action refusée.")
+    return accepted
 
 
 def _run_shell(provider: LLMProvider) -> None:
