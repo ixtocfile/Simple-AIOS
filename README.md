@@ -159,9 +159,11 @@ pas automatiquement les requêtes.
 
 ## Contrats d'outils
 
-Le module `aios.tools` fournit trois éléments indépendants du CLI et du LLM :
+Le module `aios.tools` fournit quatre éléments indépendants du CLI et du LLM :
 
-- `Tool` : classe abstraite avec `name`, `description`,
+- `RiskLevel` : énumération des niveaux `READ`, `CONFIRM` et `DENY`, décrits
+  dans la section « Modèle de risque » ci-dessous.
+- `Tool` : classe abstraite avec `name`, `description`, `risk_level`,
   `validate_arguments(arguments)` et `_execute(arguments)`. Chaque outil doit
   contrôler les clés obligatoires ou inconnues, les types et les valeurs de ses
   arguments. Le validateur lève une exception en cas d'entrée invalide.
@@ -171,7 +173,8 @@ Le module `aios.tools` fournit trois éléments indépendants du CLI et du LLM :
   incohérentes sont refusées à la construction.
 - `ToolRegistry` : registre vide à la création, avec `register(tool)`,
   `get(name)`, `list_tools()` et `execute(name, arguments)`. Il refuse les noms
-  en double, vides ou contenant des espaces, et les descriptions vides.
+  en double, vides ou contenant des espaces, les descriptions vides et les
+  niveaux de risque qui ne sont pas des membres de `RiskLevel`.
   La liste conserve l'ordre d'enregistrement ; `get` lève `KeyError` si le nom
   est inconnu.
 
@@ -186,6 +189,30 @@ Les détails des exceptions et les arguments ne sont pas journalisés ;
 Le registre sert aux appels Python de confiance et n'est pas raccordé au CLI
 ou au LLM. La validation des arguments ne remplace pas le futur contrôle
 d'autorisation par le Policy Engine.
+
+## Modèle de risque
+
+Chaque outil expose un attribut `risk_level`, défini dans son code avec
+`aios.tools.RiskLevel`. Cette classification est indépendante des arguments
+fournis à l'outil et des réponses du LLM :
+
+| Niveau | Signification |
+| --- | --- |
+| `RiskLevel.READ` | Consultation en lecture seule. |
+| `RiskLevel.CONFIRM` | Action nécessitant une confirmation explicite de l'utilisateur. |
+| `RiskLevel.DENY` | Action à refuser. |
+
+Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les quatre
+outils existants, `system.info`, `system.memory`, `system.disk` et `process.list`,
+déclarent `RiskLevel.READ`. Le registre valide le type du niveau à
+l'enregistrement : une simple chaîne comme `"READ"` est refusée. `get` et
+`list_tools` rendent ce niveau accessible sans exécuter l'outil.
+
+L'étape 4.1 fournit uniquement la classification et sa validation. Les appels
+Python de confiance via `execute` conservent leur fonctionnement actuel : le
+niveau ne déclenche encore ni blocage ni demande de confirmation. Les décisions
+du Policy Engine sont prévues à l'étape 4.2, puis la confirmation dans le CLI à
+l'étape 4.3. Le CLI et le LLM ne sont toujours pas raccordés aux outils.
 
 ## Premier outil : system.info
 

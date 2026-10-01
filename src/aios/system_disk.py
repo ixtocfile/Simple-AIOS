@@ -3,12 +3,13 @@
 from pathlib import Path
 from shutil import disk_usage
 
-from aios.tools import Tool, ToolResult
+from aios.tools import RiskLevel, Tool, ToolResult
 
 
 class SystemDiskTool(Tool):
     name = "system.disk"
     description = "Read filesystem capacity and usage for an absolute path."
+    risk_level = RiskLevel.READ
 
     def validate_arguments(self, arguments: dict[str, object]) -> None:
         if arguments.keys() - {"path"}:

@@ -3,6 +3,15 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass
+from enum import Enum
+
+
+class RiskLevel(Enum):
+    """Tool classification; authorization belongs to the future Policy Engine."""
+
+    READ = "READ"
+    CONFIRM = "CONFIRM"
+    DENY = "DENY"
 
 
 @dataclass(frozen=True)
@@ -32,6 +41,7 @@ class ToolResult:
 class Tool(ABC):
     name: str = ""
     description: str = ""
+    risk_level: RiskLevel = RiskLevel.DENY
 
     def execute(self, arguments: dict[str, object]) -> ToolResult:
         """Validate a private copy before running; never expose exception details."""
@@ -84,6 +94,8 @@ class ToolRegistry:
             raise ValueError("Tool name must be non-empty and contain no whitespace")
         if not isinstance(tool.description, str) or not tool.description.strip():
             raise ValueError("Tool description must be a non-empty string")
+        if not isinstance(tool.risk_level, RiskLevel):
+            raise ValueError("Tool risk_level must be a RiskLevel")
         if tool.name in self._tools:
             raise ValueError("Tool name is already registered")
         self._tools[tool.name] = tool

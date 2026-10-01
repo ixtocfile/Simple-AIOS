@@ -2,12 +2,13 @@
 
 from pathlib import Path
 
-from aios.tools import Tool, ToolResult
+from aios.tools import RiskLevel, Tool, ToolResult
 
 
 class SystemMemoryTool(Tool):
     name = "system.memory"
     description = "Read total, free, available and used RAM."
+    risk_level = RiskLevel.READ
 
     def validate_arguments(self, arguments: dict[str, object]) -> None:
         if arguments:

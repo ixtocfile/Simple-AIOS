@@ -5,7 +5,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.tools import Tool, ToolRegistry, ToolResult
+from aios.process_list import ProcessListTool
+from aios.system_disk import SystemDiskTool
+from aios.system_info import SystemInfoTool
+from aios.system_memory import SystemMemoryTool
+from aios.tools import RiskLevel, Tool, ToolRegistry, ToolResult
 
 
 class EchoTool(Tool):
@@ -107,9 +111,52 @@ def test_duplicate_registration_preserves_original_tool():
     assert original.calls == []
 
 
+def test_tool_without_explicit_risk_is_classified_as_deny():
+    registry = ToolRegistry()
+    tool = EchoTool()
+
+    registry.register(tool)
+
+    assert registry.get(tool.name).risk_level is RiskLevel.DENY
+    assert tool.calls == []
+
+
+@pytest.mark.parametrize("risk_level", [
+    RiskLevel.READ, RiskLevel.CONFIRM, RiskLevel.DENY,
+])
+def test_registry_preserves_declared_risk_without_executing(risk_level):
+    registry = ToolRegistry()
+    tool = EchoTool()
+    tool.risk_level = risk_level
+
+    registry.register(tool)
+
+    assert registry.get(tool.name).risk_level is risk_level
+    assert registry.list_tools()[0].risk_level is risk_level
+    assert tool.calls == []
+
+
+@pytest.mark.parametrize("tool_class", [
+    SystemInfoTool, SystemMemoryTool, SystemDiskTool, ProcessListTool,
+])
+def test_existing_tools_declare_read_risk_without_execution(tool_class, monkeypatch):
+    registry = ToolRegistry()
+    tool = tool_class()
+    execution = Mock(side_effect=AssertionError("Tool must not execute"))
+    monkeypatch.setattr(tool, "_execute", execution)
+
+    registry.register(tool)
+
+    assert registry.get(tool.name).risk_level is RiskLevel.READ
+    assert registry.list_tools()[0].risk_level is RiskLevel.READ
+    execution.assert_not_called()
+
+
 @pytest.mark.parametrize(("attribute", "value"), [
     ("name", ""), ("name", "test echo"), ("name", None),
     ("description", " \t"), ("description", None),
+    ("risk_level", None), ("risk_level", "READ"), ("risk_level", "CONFIRM"),
+    ("risk_level", "DENY"), ("risk_level", 0), ("risk_level", True),
 ])
 def test_invalid_metadata_is_not_registered(attribute, value):
     registry = ToolRegistry()
@@ -120,6 +167,7 @@ def test_invalid_metadata_is_not_registered(attribute, value):
         registry.register(tool)
 
     assert registry.list_tools() == ()
+    assert tool.calls == []
 
 
 def test_registry_rejects_objects_that_are_not_tools():
