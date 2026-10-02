@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 9.4 terminée. Aucune étape en cours ; prochaine étape : 10.1,
+État : étape 10.1 terminée. Aucune étape en cours ; prochaine étape : 10.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -263,6 +263,20 @@ Aucun gestionnaire systemd n'étant actif ici, le lancement sous son contrôle
 n'a pas été testé ; aucun service n'a été installé ou activé. Aucune dépendance
 ni script d'installation ajouté ; aucune étape suivante commencée.
 
+Validation de l'étape 10.1 sous Python 3.12 : installation éditable réussie,
+`python -m pytest -q` : 834 tests réussis, dont 27 nouveaux pour l'installation.
+Script Python standard créant ou réutilisant le venv du dépôt, installant le
+package sans dépendances de test et préparant l'unité utilisateur au chemin
+réel. Réexécution, XDG_CONFIG_HOME, chemins avec espaces, accents et pourcentages,
+prérequis invalides, refus root, préservation des unités personnalisées, des
+configurations et des données, échecs de sous-processus et validation systemd
+couverts. Installation réelle également vérifiée sous un compte non privilégié
+dans un dossier temporaire, hors réseau avec les outils de construction locaux :
+venv neuf, package non éditable, CLI `/version` et `/exit`, aide du daemon et
+unité générée validés. Aucun service activé ou démarré, aucun LLM sollicité.
+Documentation d'utilisation mise à jour ; aucune dépendance ajoutée ni étape
+de désinstallation ou guide Ubuntu/Debian commencée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -327,6 +341,6 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Phase 10 — Installation
 
-- [todo] 10.1 — Script d'installation simple.
+- [done] 10.1 — Script d'installation simple.
 - [todo] 10.2 — Script de désinstallation.
 - [todo] 10.3 — Guide d'installation Ubuntu/Debian.

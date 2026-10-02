@@ -12,6 +12,50 @@ permet aussi de redémarrer un service après confirmation explicite dans le CLI
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
 Le daemon local `aiosd` expose aussi le Core par un socket Unix privé.
 
+## Installation
+
+Sous Linux, avec Python 3.12 ou ultérieur et son module `venv` disponible,
+lancez depuis le dépôt, avec votre compte utilisateur :
+
+```bash
+python3 scripts/install.py
+```
+
+Le script crée `.venv` dans le dépôt, puis y installe le package avec pip,
+sans les dépendances de test. Il prépare l'unité utilisateur dans
+`~/.config/systemd/user/simple-aios.service`, ou sous `$XDG_CONFIG_HOME`
+si ce chemin absolu est défini. La commande du service utilise directement
+le Python de ce venv avec `-m aios.daemon`, au chemin réel du dépôt.
+Conservez le dépôt et son venv à cet emplacement.
+
+L'installation utilise les valeurs par défaut existantes. Vos fichiers TOML,
+données SQLite et logs sont conservés. Un venv valide et une unité identique
+sont réutilisés ; une unité différente, un lien symbolique à ces emplacements
+ou un `.venv` invalide provoque un refus avant installation. Les personnalisations
+d'une unité existante doivent donc être examinées manuellement.
+
+L'exécution avec root est refusée. Le chemin du dépôt accepte espaces, accents
+et `%` ; guillemets, apostrophe, antislash, dollar, accent grave, accolades et
+caractères de contrôle sont refusés pour rester compatible avec la construction
+du package et systemd. Une erreur de venv ou de pip interrompt l'installation
+avant la création de l'unité ; un venv partiellement créé peut rester sur place.
+Pip peut accéder au réseau pour récupérer les outils de construction déclarés
+dans `pyproject.toml`. Ollama et le modèle configuré sont des prérequis séparés
+pour les conversations.
+
+Après installation, démarrez explicitement le daemon, puis ouvrez le CLI :
+
+```bash
+systemctl --user daemon-reload
+systemctl --user start simple-aios.service
+.venv/bin/python -m aios
+```
+
+Le script affiche aussi ces commandes, avec le chemin absolu du CLI. Le démarrage
+et l'activation du service se font manuellement. L'activation à l'ouverture de
+session est décrite dans « Unité systemd utilisateur ». Pour réinstaller après
+une mise à jour du dépôt, arrêtez d'abord le daemon, puis relancez le script.
+
 ## Développement
 
 Python 3.12 ou ultérieur est requis. Depuis la racine du dépôt :
@@ -183,10 +227,13 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
 
 ## Unité systemd utilisateur
 
-`systemd/simple-aios.service` lance `aiosd` avec le compte de l'utilisateur,
-via `systemctl --user`, sans `sudo`. Utilisez le même compte pour le CLI.
-L'unité suppose le dépôt dans `~/Simple-AIOS`, avec le package déjà installé
-dans sa `.venv` comme décrit dans « Développement ». Elle exécute directement
+Le script d'installation prépare une copie de `systemd/simple-aios.service`
+adaptée au chemin du dépôt. Elle lance le daemon avec le compte de l'utilisateur,
+via `systemctl --user`. Utilisez le même compte pour le CLI.
+
+Pour une installation manuelle, le fichier fourni suppose le dépôt dans
+`~/Simple-AIOS`, avec le package déjà installé dans sa `.venv` comme décrit dans
+« Développement ». Cette unité exécute directement
 `%h/Simple-AIOS/.venv/bin/aiosd` ; `%h` représente le répertoire personnel.
 Il n'est pas nécessaire d'activer le venv dans un terminal pour le service.
 
