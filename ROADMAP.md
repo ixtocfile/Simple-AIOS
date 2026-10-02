@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 8.1 terminée. Aucune étape en cours ; prochaine étape : 8.2,
+État : étape 8.2 terminée. Aucune étape en cours ; prochaine étape : 8.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -187,6 +187,18 @@ erreurs de stockage sans détails sensibles et arrêt avant traitement si
 l'insertion échoue vérifiés. Aucun historique détaillé d'outil ni `/history`
 ajouté ; aucune étape suivante commencée.
 
+Validation de l'étape 8.2 sous Python 3.12 : `python -m pytest -q` : 672 tests
+réussis, dont 31 nouveaux pour l'historique des outils. Table SQLite reliée aux
+tâches, ajout à une base 8.1 existante sans perte, horodatage UTC, arguments
+demandés filtrés, résultat et statut persistés vérifiés. Tentative enregistrée
+avant validation et résultat avant le prochain appel au provider. Succès, refus,
+appels invalides ou inconnus, erreurs, interruption et résultat non sérialisable
+testés avec FakeLLMProvider et des exécutions simulées. Filtrage récursif sans
+mutation des données en mémoire, confirmation toujours obligatoire, diagnostic,
+limite de cinq tentatives, conservation après erreur du provider et arrêt sans
+réexécution en cas d'échec de stockage vérifiés. Aucune dépendance ajoutée,
+aucun service réel redémarré et aucune commande `/history` implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -237,7 +249,7 @@ ajouté ; aucune étape suivante commencée.
 ## Phase 8 — Mémoire
 
 - [done] 8.1 — Historique SQLite : tâche, timestamp et statut.
-- [todo] 8.2 — Historique des outils : arguments non sensibles, résultat et statut.
+- [done] 8.2 — Historique des outils : arguments non sensibles, résultat et statut.
 - [todo] 8.3 — Commande `/history`.
 
 ## Phase 9 — Daemon

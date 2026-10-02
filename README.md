@@ -4,8 +4,8 @@ Prototype minimal d'une couche intelligente au-dessus de Linux, uniquement en
 ligne de commande. Linux reste responsable du système et du matériel.
 
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
-configuration, des logs applicatifs, un historique SQLite des tâches et un faux
-provider pour les tests.
+configuration, des logs applicatifs, un historique SQLite des tâches et appels
+d'outils, et un faux provider pour les tests.
 Les six outils de lecture système sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
 permet aussi de redémarrer un service après confirmation explicite dans le CLI.
@@ -50,9 +50,9 @@ puis propose une nouvelle invite.
 
 Les échanges réussis sont conservés en mémoire pendant la session et transmis
 avec chaque nouveau message pour maintenir le contexte. Ce contexte est oublié
-à la fermeture du CLI. Seule la demande utilisateur et son statut de traitement
-sont persistés dans l'historique SQLite décrit ci-dessous ; les réponses du
-modèle et les résultats d'outils restent en mémoire.
+à la fermeture du CLI. Les demandes, leurs statuts et les appels d'outils sont
+persistés dans l'historique SQLite décrit ci-dessous, après filtrage des données
+sensibles. Les réponses textuelles du modèle restent en mémoire.
 
 Une erreur Ollama affiche un message sur stderr et rend l'invite disponible.
 Si elle survient avant un appel d'outil, le tour échoué n'est pas ajouté
@@ -107,12 +107,58 @@ une URL ou certains préfixes de tokens) est remplacée intégralement par
 `[contenu sensible masqué]`. Ce filtre conservateur peut masquer une demande
 anodine et ne détecte pas tous les secrets possibles : ne saisissez pas de secrets
 dans les demandes. Le message envoyé au provider reste celui saisi par
-l'utilisateur. Les réponses, arguments et résultats des outils, confirmations,
-configuration et détails des exceptions ne sont pas copiés dans cette base.
+l'utilisateur. Les réponses textuelles du modèle, saisies de confirmation,
+configuration de l'application et détails des exceptions ne sont pas copiés
+dans cette base. Les appels d'outils sont conservés comme décrit ci-dessous.
 Le journal applicatif reste sans contenu des échanges.
 
-L'étape 8.1 n'ajoute aucune commande de consultation. L'historique détaillé des
-outils (8.2) et `/history` (8.3) restent à réaliser.
+## Historique des outils
+
+L'étape 8.2 ajoute la table `tool_calls` dans la même base SQLite. Les bases de
+l'étape 8.1 sont complétées à l'ouverture, en conservant leurs tâches existantes.
+Chaque tentative traitée dans la conversation ou par `/diagnose` possède :
+
+- `id` : identifiant entier de l'appel, utilisable pour conserver son ordre.
+- `task_id` : référence à la tâche en cours, contrôlée par SQLite.
+- `tool` : nom de l'outil demandé, filtré s'il contient un marqueur sensible.
+- `arguments` : arguments demandés au format JSON, après filtrage ; les valeurs
+  par défaut ajoutées par le validateur ne sont pas recopiées dans ce champ.
+- `timestamp` : début de la tentative en UTC, au format ISO 8601.
+- `result` : JSON avec `success`, `data` et `error`, filtré avant écriture.
+- `status` : `running`, `succeeded`, `failed` ou `interrupted`.
+
+La tentative `running` est enregistrée avant validation, policy, confirmation
+et exécution. Le statut final et le résultat sont enregistrés avant le prochain
+appel au modèle. `succeeded` correspond à un `ToolResult.success` vrai ; `failed`
+couvre aussi les appels invalides, inconnus ou refusés. Un résultat non
+sérialisable est conservé comme l'échec `Invalid tool result` transmis au modèle.
+Un Ctrl+C propagé pendant le traitement donne `interrupted`, avec `result` nul :
+l'historique n'affirme pas qu'une action commencée a été annulée.
+
+Un JSON d'appel mal formé est enregistré avec `tool` et `arguments` nuls, sans
+recopier le texte brut. Le texte ordinaire du modèle ne crée pas d'appel. Les
+cinq tentatives du diagnostic ou de la boucle sont liées à leur tâche ; un
+sixième appel bloqué par la limite n'est pas traité ni enregistré. Les règles
+de validation et de confirmation restent appliquées à chaque tentative.
+
+Les dictionnaires et listes d'arguments et de résultats sont copiés, puis filtrés
+récursivement. Les clés sensibles (mots de passe, tokens, clés API, cookies,
+identifiants d'authentification, etc.) et leurs valeurs sont remplacées par
+`[contenu sensible masqué]`. Plusieurs clés masquées peuvent être regroupées
+sous ce marqueur. Les chaînes contenant les marqueurs usuels, une URL avec
+identifiants ou une valeur d'authentification `Bearer`/`Basic` sont aussi masquées.
+Ce filtre reste heuristique et ne garantit pas la détection de tout secret.
+Il ne modifie ni les arguments exécutés ni le résultat envoyé au modèle.
+
+Une erreur du provider après l'outil laisse son résultat enregistré. Un arrêt
+brutal ou un échec d'écriture du résultat peut laisser l'appel `running`, avec
+une issue inconnue ; aucune reprise ni réexécution automatique n'est effectuée.
+Un échec de l'insertion initiale empêche le traitement de cet appel. Comme pour
+les tâches, une erreur de stockage termine le CLI proprement avec le code 1,
+sans enregistrer le détail de l'exception dans les logs. Les appels Python
+directs aux outils restent indépendants de cette persistance gérée par le CLI.
+
+La commande de consultation `/history` reste prévue à l'étape 8.3.
 
 ## Diagnostic général
 
@@ -148,7 +194,9 @@ Les cinq tentatives consomment le budget de cette commande. Aucun appel d'outil
 supplémentaire demandé par le modèle n'est exécuté, même en lecture seule.
 Une réponse commençant par un objet ou tableau JSON est remplacée par un message
 indiquant l'absence de synthèse textuelle. Le diagnostic ne redémarre ni ne répare
-aucun service. Les résultats et la synthèse ne sont pas journalisés.
+aucun service. Les résultats filtrés sont conservés dans l'historique SQLite ;
+la synthèse reste en mémoire. Aucun de ces contenus n'est écrit dans le fichier
+de logs applicatifs.
 
 Si Ollama est indisponible, le CLI signale l'erreur et conserve les observations
 dans la session, sans nouvelle tentative automatique. Une nouvelle commande
@@ -421,7 +469,8 @@ ne peut pas accorder la confirmation. Un appel impossible à représenter pour
 l'affichage est également refusé avant toute saisie.
 
 Les caractères de contrôle des noms et arguments sont échappés à l'affichage.
-Les arguments et réponses de confirmation ne sont pas journalisés. La saisie
+Les arguments et réponses de confirmation ne sont pas écrits dans les logs
+applicatifs. Les arguments filtrés figurent dans l'historique des outils. La saisie
 de confirmation reste locale ; le modèle reçoit uniquement le résultat structuré
 de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
@@ -484,10 +533,12 @@ ainsi que `systemd.status`, `systemd.list` et `systemd.restart` au début de cha
 session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
 valide, il suit cet ordre :
 
-1. Rechercher l'outil enregistré et valider ses arguments spécifiques.
-2. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
-3. Exécuter uniquement l'appel autorisé et recueillir son `ToolResult`.
-4. Ajouter l'appel de l'assistant et le résultat à la conversation, puis interroger
+1. Enregistrer la tentative et ses arguments filtrés dans l'historique SQLite.
+2. Rechercher l'outil enregistré et valider ses arguments spécifiques.
+3. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
+4. Exécuter uniquement l'appel autorisé et recueillir son `ToolResult`.
+5. Enregistrer le résultat filtré et le statut de l'appel dans SQLite.
+6. Ajouter l'appel de l'assistant et le résultat à la conversation, puis interroger
    le modèle à nouveau. Une réponse textuelle est affichée ; un nouvel appel JSON
    reprend ces vérifications dans la limite décrite ci-dessous.
 

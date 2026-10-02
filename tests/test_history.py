@@ -172,7 +172,7 @@ def test_exit_at_prompt_does_not_create_a_task(history_cli, tmp_path, ending):
 
 @pytest.mark.parametrize("risk", [RiskLevel.READ, RiskLevel.DENY])
 @pytest.mark.parametrize("provider_failure", [False, True])
-def test_tool_requests_keep_only_the_parent_task_and_its_processing_status(
+def test_tool_requests_keep_one_parent_task_and_its_processing_status(
     history_cli, tmp_path, monkeypatch, risk, provider_failure,
 ):
     registry = _build_tool_registry()
@@ -199,7 +199,7 @@ def test_tool_requests_keep_only_the_parent_task_and_its_processing_status(
         ("Lis les informations système", "failed" if provider_failure else "completed"),
     ]
     content = (tmp_path / "history.sqlite3").read_bytes()
-    for excluded in (call, "private-host", "Résultat reçu", "tool_result", "private follow-up detail"):
+    for excluded in (call, "Résultat reçu", "tool_result", "private follow-up detail"):
         assert excluded.encode() not in content
 
 
@@ -219,7 +219,7 @@ def test_diagnostic_is_one_task_committed_before_readings(history_cli, tmp_path,
     assert len(observations) == 5
     assert all(len(observation) == 1 and observation[0][3] == "running" for observation in observations)
     assert [(row[1], row[3]) for row in rows(tmp_path)] == [("/diagnose", "completed")]
-    assert b"Reading unavailable" not in (tmp_path / "history.sqlite3").read_bytes()
+    assert b"Reading unavailable" in (tmp_path / "history.sqlite3").read_bytes()
 
 
 def test_budget_exhaustion_completes_the_request_without_extra_history_rows(

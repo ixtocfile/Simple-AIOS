@@ -1,6 +1,7 @@
 """Entry point for ``python -m aios``."""
 
 import argparse
+from collections.abc import Callable
 from contextlib import closing
 from dataclasses import asdict
 from importlib.metadata import version
@@ -84,45 +85,68 @@ def _build_tool_registry() -> ToolRegistry:
     return registry
 
 
-def _tool_feedback(reply: str, registry: ToolRegistry, policy: PolicyEngine) -> Message | None:
+def _tool_feedback(
+    reply: str, registry: ToolRegistry, policy: PolicyEngine,
+    history: TaskHistory, task_id: int,
+) -> Message | None:
     try:
         call = parse_tool_call(reply)
     except ToolCallError:
         if not reply.lstrip().startswith(("{", "[")):
             return None
-        name = None
+        call_id = history.start_tool(task_id, None, None)
         result = ToolResult(success=False, error="Invalid tool call")
+        return _result_feedback(None, result, history, call_id)
     else:
-        name = call.tool
-        result = registry.execute(
-            name, call.arguments,
-            authorize=lambda arguments: authorize_tool_call(policy, name, arguments),
+        return _execute_tool_feedback(
+            call.tool, call.arguments, registry,
+            lambda arguments: authorize_tool_call(policy, call.tool, arguments),
+            history, task_id,
         )
 
-    return _result_feedback(name, result)
+
+def _execute_tool_feedback(
+    name: str, arguments: dict[str, object], registry: ToolRegistry,
+    authorize: Callable[[dict[str, object]], bool], history: TaskHistory, task_id: int,
+) -> Message:
+    call_id = history.start_tool(task_id, name, arguments)
+    try:
+        result = registry.execute(name, arguments, authorize=authorize)
+    except (KeyboardInterrupt, SystemExit):
+        history.finish_tool(call_id, None)
+        raise
+    except Exception:
+        history.finish_tool(call_id, ToolResult(success=False, error="Tool execution failed"))
+        raise
+    return _result_feedback(name, result, history, call_id)
 
 
-def _result_feedback(name: str | None, result: ToolResult) -> Message:
+def _result_feedback(
+    name: str | None, result: ToolResult, history: TaskHistory, call_id: int,
+) -> Message:
     try:
         content = json.dumps(
             {"tool_result": {"tool": name, **asdict(result)}}, allow_nan=False,
         )
     except Exception:
-        failure = ToolResult(success=False, error="Invalid tool result")
-        content = json.dumps({"tool_result": {"tool": name, **asdict(failure)}})
+        result = ToolResult(success=False, error="Invalid tool result")
+        content = json.dumps({"tool_result": {"tool": name, **asdict(result)}})
+    history.finish_tool(call_id, result)
     # Keep the existing text-chat contract; this is application-generated data.
     return {"role": "user", "content": content}
 
 
-def _diagnostic_feedback(registry: ToolRegistry, policy: PolicyEngine) -> list[Message]:
+def _diagnostic_feedback(
+    registry: ToolRegistry, policy: PolicyEngine, history: TaskHistory, task_id: int,
+) -> list[Message]:
     """Collect the fixed READ checks; CONFIRM and DENY never prompt or execute."""
     feedback = []
     for name, arguments in DIAGNOSTIC_CALLS:
-        result = registry.execute(
-            name, arguments,
-            authorize=lambda _, name=name: policy.evaluate(name) is PolicyDecision.ALLOW,
-        )
-        feedback.append(_result_feedback(name, result))
+        feedback.append(_execute_tool_feedback(
+            name, arguments, registry,
+            lambda _, name=name: policy.evaluate(name) is PolicyDecision.ALLOW,
+            history, task_id,
+        ))
     return feedback
 
 
@@ -162,14 +186,14 @@ def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
             try:
                 remaining_calls = MAX_TOOL_CALLS_PER_REQUEST
                 if command == "/diagnose":
-                    pending = [*pending, *_diagnostic_feedback(registry, policy)]
+                    pending = [*pending, *_diagnostic_feedback(registry, policy, history, task_id)]
                     # Keep all observations if the summary fails; no automatic retry.
                     messages = pending
                     # The five checks have already consumed the budget: summary only.
                     remaining_calls = 0
                 reply = provider.chat(pending)
                 for _ in range(remaining_calls):
-                    feedback = _tool_feedback(reply, registry, policy)
+                    feedback = _tool_feedback(reply, registry, policy, history, task_id)
                     if feedback is None:
                         break
                     pending = [*pending, {"role": "assistant", "content": reply}, feedback]
