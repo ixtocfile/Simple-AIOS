@@ -6,7 +6,8 @@ ligne de commande. Linux reste responsable du système et du matériel.
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
 configuration, des logs applicatifs et un faux provider pour les tests.
 Les six outils de lecture système sont accessibles à la conversation après
-validation de l'appel et autorisation par le Policy Engine.
+validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
+permet aussi de redémarrer un service après confirmation explicite dans le CLI.
 
 ## Développement
 
@@ -201,8 +202,10 @@ Un nom inconnu ou des arguments invalides ne déclenchent pas cette fonction.
 La copie présentée à l'autorisation inclut les valeurs normalisées ou par
 défaut ; la modifier ne change pas les arguments exécutés.
 
-Les appels Python de confiance peuvent omettre ce paramètre. Le CLI le fournit
-systématiquement pour appliquer le Policy Engine et la confirmation utilisateur
+Les appels Python de confiance peuvent généralement omettre ce paramètre.
+`systemd.restart` exige toutefois une fonction d'autorisation, même hors du CLI ;
+son absence produit `Tool execution denied`. Le CLI fournit systématiquement
+cette fonction pour appliquer le Policy Engine et la confirmation utilisateur
 à chaque appel du modèle. Le registre lui-même reste indépendant du CLI.
 
 ## Modèle de risque
@@ -218,8 +221,9 @@ fournis à l'outil et des réponses du LLM :
 | `RiskLevel.DENY` | Action à refuser. |
 
 Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les six
-outils existants, `system.info`, `system.memory`, `system.disk`, `process.list`
+outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`
 ainsi que `systemd.status` et `systemd.list`, déclarent `RiskLevel.READ`.
+`systemd.restart` déclare `RiskLevel.CONFIRM`.
 Le registre valide le type du niveau à l'enregistrement : une simple chaîne
 comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
 sans exécuter l'outil.
@@ -261,10 +265,8 @@ Le moteur produit uniquement une décision : il n'exécute aucun outil, ne valid
 pas leurs arguments, ne sollicite pas le LLM et ne recueille aucune confirmation.
 `CONFIRM` indique qu'un accord explicite reste nécessaire ; cette décision ne
 vaut pas accord. Le composant de confirmation CLI est décrit ci-dessous.
-Les appels Python de confiance à `Tool.execute` et `ToolRegistry.execute`
-conservent leur fonctionnement actuel. La conversation CLI relie désormais
-validation des arguments, décision de policy, éventuelle confirmation et
-exécution, avant de transmettre le résultat au modèle.
+La conversation CLI relie validation des arguments, décision de policy,
+éventuelle confirmation et exécution, avant de transmettre le résultat au modèle.
 
 ## Confirmation dans le CLI
 
@@ -277,10 +279,10 @@ décision du Policy Engine en un booléen pour l'appel présenté :
 | `CONFIRM` | Affiche l'outil et ses arguments, puis demande un accord explicite. |
 | `DENY` ou décision inattendue | Affiche « Action refusée. » et renvoie `False` sans saisie. |
 
-Exemple d'invite avec un outil fictif classé `CONFIRM` :
+Exemple d'invite pour `systemd.restart`, classé `CONFIRM` :
 
 ```text
-Action à confirmer : {"outil": "test.action", "arguments": {"target": "demo"}}
+Action à confirmer : {"outil": "systemd.restart", "arguments": {"service": "demo.service"}}
 Confirmer cette action ? Tapez oui [oui/NON] :
 ```
 
@@ -297,8 +299,8 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les six outils existants sont classés `READ` ; les tests de
-confirmation utilisent des outils fictifs. Le CLI appelle ce composant avec les
+action. Les six outils de lecture sont classés `READ` et `systemd.restart`
+exige une confirmation. Le CLI appelle ce composant avec les
 arguments déjà validés et normalisés, juste avant l'exécution de l'outil.
 
 ## Format JSON des appels d'outils
@@ -350,8 +352,9 @@ rien. Le CLI enchaîne les vérifications décrites ci-dessous.
 ## Exécution d'un appel dans la conversation
 
 Le CLI enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
-ainsi que `systemd.status` et `systemd.list` au début de chaque session, sans les
-exécuter. Lorsqu'une réponse du modèle est un appel JSON valide, il suit cet ordre :
+ainsi que `systemd.status`, `systemd.list` et `systemd.restart` au début de chaque
+session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
+valide, il suit cet ordre :
 
 1. Rechercher l'outil enregistré et valider ses arguments spécifiques.
 2. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
@@ -616,7 +619,8 @@ Le résultat contient `data["services"]`, une liste triée par nom, avec au plus
 `limit` entrées. Chaque entrée contient `service`, `load_state`, `active_state`
 et `sub_state`, comme le résultat de `systemd.status`. Les noms sont conservés
 tels que signalés par systemd, y compris les instances et les séquences échappées
-`\xHH`. Ces dernières restent hors du format d'entrée accepté par `systemd.status`.
+`\xHH`. Ces dernières restent hors du format d'entrée accepté par
+`systemd.status` et `systemd.restart`.
 Le booléen `data["truncated"]` indique si d'autres services ont été omis à cause
 de la limite. Une liste vide est un succès, avec `truncated` à `false`.
 
@@ -633,6 +637,48 @@ un code de sortie non nul produisent un échec générique `Tool execution faile
 sans liste partielle, détail d'exception, nouvelle tentative ou commande de
 remplacement. Les tests utilisent un `systemctl` simulé et FakeLLMProvider.
 
+## Outil systemd : systemd.restart
+
+`aios.systemd_restart.SystemdRestartTool` redémarre un seul service du
+gestionnaire systemd système local. Il est classé `CONFIRM` et enregistré dans
+le CLI. Selon le comportement de
+[`systemctl restart`](https://github.com/systemd/systemd/blob/main/man/systemctl.xml),
+un service arrêté sera démarré.
+
+Le seul argument autorisé, obligatoire, est `service`. Il suit le même format
+strict que `systemd.status` : nom ASCII explicite terminé par `.service`, au
+plus 255 caractères, instance nommée facultative. Noms abrégés, templates sans
+instance, chemins, motifs glob, espaces, caractères échappés, options et
+arguments supplémentaires sont refusés avant la confirmation et l'exécution.
+
+```json
+{"tool":"systemd.restart","arguments":{"service":"demo.service"}}
+```
+
+Le CLI affiche l'outil et le service, puis exige `oui` dans un terminal
+interactif. Une réponse vide, négative, ambiguë, EOF ou Ctrl+C refuse l'action.
+L'accord reste propre à cet appel, même si le modèle redemande le même service.
+Un champ `confirmed` fourni par le modèle est invalide et ne vaut jamais accord.
+Les appels Python directs doivent aussi fournir `authorize`, dont le retour
+doit être exactement `True` ; cette fonction reste du code de confiance chargé
+de recueillir l'accord.
+
+Après autorisation, une seule commande fixe est lancée sous forme de liste :
+`systemctl --system --no-pager --no-ask-password restart -- SERVICE`.
+Elle utilise `shell=False`, les droits du processus courant, sans `sudo`, et
+des entrées/sorties reliées à `DEVNULL`. Elle attend la fin du job, avec un
+timeout de 30 secondes. Un succès renvoie
+`{"service": "demo.service", "restarted": true}` dans `data` : `systemctl` a
+terminé avec le code zéro. Ce résultat ne constitue pas un contrôle de santé
+du service ; son état peut être consulté séparément avec `systemd.status`.
+
+Un binaire absent, un refus de permission ou un code de sortie non nul produit
+`Tool execution failed`, sans détail sensible. Un timeout produit
+`Service restart timed out; outcome unknown` : l'arrêt du client `systemctl`
+ne permet pas de conclure à l'annulation du job côté systemd. L'outil ne réessaie
+pas et ne lance aucune commande de remplacement. Les tests simulent tous les
+redémarrages et utilisent FakeLLMProvider ; aucun service réel n'est redémarré.
+
 ## Tests
 
 ```bash
@@ -641,8 +687,9 @@ python -m pytest -q
 
 Les tests fonctionnent sans LLM et simulent `systemctl`, sans exiger systemd.
 Le package n'a aucune dépendance Python d'exécution ; pytest est réservé aux
-tests. L'utilisation réelle de `systemd.status` et `systemd.list` nécessite
-`systemctl` dans le `PATH` et un gestionnaire systemd système local accessible.
+tests. L'utilisation réelle des trois outils `systemd` nécessite `systemctl`
+dans le `PATH` et un gestionnaire systemd système local accessible.
+`systemd.restart` exige en plus les permissions système de redémarrer le service.
 
 Consulter [ROADMAP.md](ROADMAP.md) pour la progression et [AGENTS.md](AGENTS.md)
 pour les règles de contribution. Licence : [MIT](LICENSE).

@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 6.2 terminée. Aucune étape en cours ; prochaine étape : 6.3,
+État : étape 6.3 terminée. Aucune étape en cours ; prochaine étape : 7.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -142,6 +142,16 @@ et FakeLLMProvider. L'essai local sans systemd a confirmé l'échec structuré
 attendu ; aucune liste réelle n'a pu être interrogée ici. Aucune étape suivante
 ajoutée.
 
+Validation de l'étape 6.3 sous Python 3.12 : `python -m pytest -q` : 584 tests
+réussis. `systemd.restart` classé CONFIRM, nom `.service` strict, rejet des
+arguments invalides avant autorisation, commande fixe sans shell ni élévation
+de privilèges et résultat structuré vérifiés. Refus sans fonction d'autorisation,
+confirmation explicite dans un terminal, refus par défaut, accord non réutilisé,
+erreurs sans détails sensibles et timeout à issue inconnue testés. Le CLI
+transmet succès, refus et erreurs au modèle. Tous les redémarrages sont simulés
+avec `systemctl` remplacé et FakeLLMProvider ; aucun service réel n'a été
+redémarré. Aucune étape suivante ajoutée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -182,7 +192,7 @@ ajoutée.
 
 - [done] 6.1 — `systemd.status` en lecture seule.
 - [done] 6.2 — `systemd.list` en lecture seule.
-- [todo] 6.3 — `systemd.restart` avec confirmation et validation stricte du service.
+- [done] 6.3 — `systemd.restart` avec confirmation et validation stricte du service.
 
 ## Phase 7 — Diagnostic
 

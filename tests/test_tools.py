@@ -10,6 +10,7 @@ from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
 from aios.systemd_list import SystemdListTool
+from aios.systemd_restart import SystemdRestartTool
 from aios.systemd_status import SystemdStatusTool
 from aios.tools import RiskLevel, Tool, ToolRegistry, ToolResult
 
@@ -138,11 +139,13 @@ def test_registry_preserves_declared_risk_without_executing(risk_level):
     assert tool.calls == []
 
 
-@pytest.mark.parametrize("tool_class", [
-    SystemInfoTool, SystemMemoryTool, SystemDiskTool, ProcessListTool, SystemdStatusTool,
-    SystemdListTool,
+@pytest.mark.parametrize(("tool_class", "risk"), [
+    (SystemInfoTool, RiskLevel.READ), (SystemMemoryTool, RiskLevel.READ),
+    (SystemDiskTool, RiskLevel.READ), (ProcessListTool, RiskLevel.READ),
+    (SystemdStatusTool, RiskLevel.READ), (SystemdListTool, RiskLevel.READ),
+    (SystemdRestartTool, RiskLevel.CONFIRM),
 ])
-def test_existing_tools_declare_read_risk_without_execution(tool_class, monkeypatch):
+def test_existing_tools_declare_their_risk_without_execution(tool_class, risk, monkeypatch):
     registry = ToolRegistry()
     tool = tool_class()
     execution = Mock(side_effect=AssertionError("Tool must not execute"))
@@ -150,8 +153,8 @@ def test_existing_tools_declare_read_risk_without_execution(tool_class, monkeypa
 
     registry.register(tool)
 
-    assert registry.get(tool.name).risk_level is RiskLevel.READ
-    assert registry.list_tools()[0].risk_level is RiskLevel.READ
+    assert registry.get(tool.name).risk_level is risk
+    assert registry.list_tools()[0].risk_level is risk
     execution.assert_not_called()
 
 

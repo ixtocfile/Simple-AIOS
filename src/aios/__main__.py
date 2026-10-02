@@ -17,6 +17,7 @@ from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
 from aios.systemd_list import SystemdListTool
+from aios.systemd_restart import SystemdRestartTool
 from aios.systemd_status import SystemdStatusTool
 from aios.tool_calls import ToolCallError, parse_tool_call
 from aios.tools import ToolRegistry, ToolResult
@@ -67,7 +68,7 @@ def _build_tool_registry() -> ToolRegistry:
     registry = ToolRegistry()
     for tool in (
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
-        SystemdStatusTool(), SystemdListTool(),
+        SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
     ):
         registry.register(tool)
     return registry

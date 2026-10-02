@@ -10,6 +10,7 @@ from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
 from aios.systemd_list import SystemdListTool
+from aios.systemd_restart import SystemdRestartTool
 from aios.systemd_status import SystemdStatusTool
 from aios.tools import RiskLevel, Tool, ToolRegistry
 
@@ -106,11 +107,13 @@ def test_decisions_are_refreshed_from_the_same_registry(registered_tool):
     assert policy.evaluate(tool.name) is PolicyDecision.DENY
 
 
-@pytest.mark.parametrize("tool_class", [
-    SystemInfoTool, SystemMemoryTool, SystemDiskTool, ProcessListTool, SystemdStatusTool,
-    SystemdListTool,
+@pytest.mark.parametrize(("tool_class", "decision"), [
+    (SystemInfoTool, PolicyDecision.ALLOW), (SystemMemoryTool, PolicyDecision.ALLOW),
+    (SystemDiskTool, PolicyDecision.ALLOW), (ProcessListTool, PolicyDecision.ALLOW),
+    (SystemdStatusTool, PolicyDecision.ALLOW), (SystemdListTool, PolicyDecision.ALLOW),
+    (SystemdRestartTool, PolicyDecision.CONFIRM),
 ])
-def test_existing_read_only_tools_are_allowed_without_running(tool_class, monkeypatch):
+def test_existing_tools_receive_their_policy_without_running(tool_class, decision, monkeypatch):
     registry = ToolRegistry()
     tool = tool_class()
     blocked = Mock(side_effect=AssertionError("Tool must not run"))
@@ -119,7 +122,7 @@ def test_existing_read_only_tools_are_allowed_without_running(tool_class, monkey
     monkeypatch.setattr(tool, "_execute", blocked)
     registry.register(tool)
 
-    assert PolicyEngine(registry).evaluate(tool.name) is PolicyDecision.ALLOW
+    assert PolicyEngine(registry).evaluate(tool.name) is decision
     blocked.assert_not_called()
 
 

@@ -340,13 +340,127 @@ def tool_reply(arguments=None):
     return json.dumps({"tool": "test.action", "arguments": arguments or {}})
 
 
-def test_default_cli_registry_contains_only_existing_read_tools():
+def test_default_cli_registry_contains_six_read_tools_and_restart_with_confirmation():
     tools = _build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
-        "systemd.status", "systemd.list",
+        "systemd.status", "systemd.list", "systemd.restart",
     ]
-    assert all(tool.risk_level is RiskLevel.READ for tool in tools)
+    assert [tool.risk_level for tool in tools] == [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM]
+
+
+@pytest.mark.parametrize(("interactive", "answer", "allowed"), [
+    (True, "oui", True), (True, " OUI ", True), (True, "", False),
+    (True, "non", False), (True, "yes", False), (True, EOFError, False),
+    (True, KeyboardInterrupt, False), (True, OSError("private input detail"), False),
+    (False, None, False),
+])
+def test_cli_restart_requires_explicit_terminal_confirmation(
+    cli_session, monkeypatch, capsys, tmp_path, interactive, answer, allowed,
+):
+    run = Mock(return_value=subprocess.CompletedProcess(["systemctl"], 0))
+    monkeypatch.setattr("aios.systemd_restart.subprocess.run", run)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: interactive)
+    reply = json.dumps({"tool": "systemd.restart", "arguments": {"service": "private-demo.service"}})
+    provider = FakeLLMProvider([reply, "Résultat reçu"])
+    entries = ["Redémarre ce service"] + ([answer] if interactive else []) + ["/exit"]
+
+    assert cli_session(provider, entries) == 0
+
+    assert len(provider.calls) == 2
+    assert json.loads(provider.calls[1][-1]["content"]) == {"tool_result": {
+        "tool": "systemd.restart", "success": allowed,
+        "data": {"service": "private-demo.service", "restarted": True} if allowed else None,
+        "error": None if allowed else "Tool execution denied",
+    }}
+    assert run.call_count == int(allowed)
+    if allowed:
+        assert run.call_args.args[0][-3:] == ["restart", "--", "private-demo.service"]
+    captured = capsys.readouterr()
+    assert captured.out.count("Action à confirmer") == int(interactive)
+    if interactive:
+        assert '"outil": "systemd.restart", "arguments": {"service": "private-demo.service"}' in captured.out
+    if not allowed:
+        assert "Action refusée." in captured.out
+    assert captured.out.endswith("Résultat reçu\n")
+    assert captured.err == ""
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "private-demo" not in logs
+    assert "private input detail" not in logs + captured.out + repr(provider.calls)
+    assert all(call[-1]["content"] != answer for call in provider.calls)
+
+
+@pytest.mark.parametrize(("reply", "error"), [
+    ('{"tool":"systemd.restart","arguments":{"service":"demo.service"},"confirmed":true}',
+     "Invalid tool call"),
+    ('{"tool":"systemd.restart","arguments":{"service":"demo.service","confirmed":true}}',
+     "Invalid tool arguments"),
+    ('{"tool":"systemd.restart","arguments":{"service":"*.service"}}', "Invalid tool arguments"),
+    ('{"tool":"systemd.restart","arguments":{}}', "Invalid tool arguments"),
+])
+def test_cli_invalid_restart_does_not_reach_policy_confirmation_or_systemctl(
+    cli_session, monkeypatch, capsys, reply, error,
+):
+    run = Mock()
+    evaluate = Mock()
+    monkeypatch.setattr("aios.systemd_restart.subprocess.run", run)
+    monkeypatch.setattr(PolicyEngine, "evaluate", evaluate)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    provider = FakeLLMProvider([reply, "Appel refusé"])
+
+    assert cli_session(provider, ["Demande", "/exit"]) == 0
+
+    result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
+    assert result["success"] is False
+    assert result["error"] == error
+    run.assert_not_called()
+    evaluate.assert_not_called()
+    assert "Action à confirmer" not in capsys.readouterr().out
+
+
+def test_cli_restart_asks_again_for_every_service_and_call(cli_session, monkeypatch, capsys):
+    run = Mock(return_value=subprocess.CompletedProcess(["systemctl"], 0))
+    monkeypatch.setattr("aios.systemd_restart.subprocess.run", run)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    services = ["demo.service", "demo.service", "other.service"]
+    provider = FakeLLMProvider([
+        *(json.dumps({"tool": "systemd.restart", "arguments": {"service": service}}) for service in services),
+        "Terminé",
+    ])
+
+    assert cli_session(provider, ["Demande", "oui", "non", "oui", "/exit"]) == 0
+
+    results = [json.loads(call[-1]["content"])["tool_result"] for call in provider.calls[1:]]
+    assert [result["success"] for result in results] == [True, False, True]
+    assert results[1]["error"] == "Tool execution denied"
+    assert [call.args[0][-1] for call in run.call_args_list] == ["demo.service", "other.service"]
+    assert capsys.readouterr().out.count("Action à confirmer") == 3
+
+
+@pytest.mark.parametrize(("error", "message"), [
+    (subprocess.CalledProcessError(1, ["systemctl"], stderr="private command detail"),
+     "Tool execution failed"),
+    (subprocess.TimeoutExpired(["systemctl"], 30, output="private command detail"),
+     "Service restart timed out; outcome unknown"),
+])
+def test_cli_reports_restart_failure_to_the_model_without_retry(
+    cli_session, monkeypatch, capsys, tmp_path, error, message,
+):
+    run = Mock(side_effect=error)
+    monkeypatch.setattr("aios.systemd_restart.subprocess.run", run)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    reply = json.dumps({"tool": "systemd.restart", "arguments": {"service": "demo.service"}})
+    provider = FakeLLMProvider([reply, "Résultat reçu"])
+
+    assert cli_session(provider, ["Demande", "oui", "/exit"]) == 0
+
+    assert json.loads(provider.calls[1][-1]["content"])["tool_result"] == {
+        "tool": "systemd.restart", "success": False, "data": None, "error": message,
+    }
+    assert run.call_count == 1
+    captured = capsys.readouterr()
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "private command detail" not in captured.out + captured.err + logs + repr(provider.calls)
 
 
 @pytest.mark.parametrize("limit", [1, True])
