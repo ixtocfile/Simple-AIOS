@@ -1,0 +1,14 @@
+[Unit]
+Description=Simple-AIOS local daemon
+
+[Service]
+Type=exec
+WorkingDirectory=%h
+ExecStart="%h/Simple-AIOS/.venv/bin/aiosd"
+UMask=0077
+NoNewPrivileges=yes
+Restart=no
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

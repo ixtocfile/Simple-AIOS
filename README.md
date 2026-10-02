@@ -181,7 +181,68 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         print(json.loads(stream.readline()))
 ```
 
-L'unité systemd reste prévue à l'étape 9.4.
+## Unité systemd utilisateur
+
+`systemd/simple-aios.service` lance `aiosd` avec le compte de l'utilisateur,
+via `systemctl --user`, sans `sudo`. Utilisez le même compte pour le CLI.
+L'unité suppose le dépôt dans `~/Simple-AIOS`, avec le package déjà installé
+dans sa `.venv` comme décrit dans « Développement ». Elle exécute directement
+`%h/Simple-AIOS/.venv/bin/aiosd` ; `%h` représente le répertoire personnel.
+Il n'est pas nécessaire d'activer le venv dans un terminal pour le service.
+
+Depuis la racine du dépôt, copiez l'unité :
+
+```bash
+install -d "$HOME/.config/systemd/user"
+install -m 0644 systemd/simple-aios.service "$HOME/.config/systemd/user/"
+```
+
+Si le dépôt est ailleurs, adaptez `ExecStart` dans la copie installée avant le
+démarrage : indiquez le chemin absolu de `.venv/bin/aiosd`, entre guillemets.
+Pour une configuration personnalisée, ajoutez `--config` suivi du chemin absolu
+d'un fichier TOML existant. Aucun fichier de configuration n'est chargé
+automatiquement. Le répertoire de travail est le répertoire personnel ; les
+chemins de données relatifs dans le TOML sont donc relatifs à celui-ci.
+
+Arrêtez d'abord tout daemon lancé manuellement sur le même socket, puis :
+
+```bash
+systemctl --user daemon-reload
+systemctl --user start simple-aios.service
+systemctl --user status simple-aios.service
+```
+
+Le CLI reste lancé séparément avec `python -m aios`. Par défaut, le service
+conserve `~/.local/share/simple-aios` pour les données, les logs et le socket ;
+aucun argument supplémentaire n'est requis côté CLI. Si vous changez ces
+chemins, configurez le CLI pour joindre le même socket. Ollama reste un service
+indépendant, nécessaire seulement aux demandes qui sollicitent le modèle.
+
+Pour lancer l'unité à l'activation du gestionnaire systemd de l'utilisateur :
+
+```bash
+systemctl --user enable simple-aios.service
+```
+
+Cette activation concerne la session utilisateur, pas un service système
+global au démarrage de la machine. `systemctl --user stop simple-aios.service`
+envoie `SIGTERM` ; le daemon ferme SQLite et ses logs, puis retire son socket.
+Le délai d'arrêt est de 10 secondes avant l'arrêt forcé par systemd. L'unité
+ne redémarre pas automatiquement en cas d'échec (`Restart=no`) : après un arrêt
+brutal, vérifiez que le daemon est arrêté avant de retirer un éventuel socket
+résiduel et de relancer le service. Les données et logs sont conservés.
+
+`UMask=0077` rend les nouveaux fichiers privés au compte, sans modifier les
+permissions des fichiers déjà présents. `NoNewPrivileges=yes` empêche les
+processus lancés d'acquérir des privilèges supplémentaires à l'exécution.
+La policy et les confirmations du CLI restent obligatoires ; l'unité ne
+donne aucun droit supplémentaire sur les services du système.
+
+Les tests vérifient la syntaxe avec `systemd-analyze --user verify` lorsque cet
+outil est disponible, puis exécutent la commande de l'unité dans un répertoire
+temporaire : socket privé, consultation d'historique et arrêt propre. Ils
+n'installent ni n'activent de service sur la machine de test. La commande
+`systemctl --user start` nécessite une session avec un gestionnaire systemd actif.
 
 ## CLI connecté au daemon
 

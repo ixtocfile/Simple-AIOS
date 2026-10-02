@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 9.3 terminée. Aucune étape en cours ; prochaine étape : 9.4,
+État : étape 9.4 terminée. Aucune étape en cours ; prochaine étape : 10.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -250,6 +250,19 @@ un adaptateur en mémoire, tests de transport exécutés avec l'accès aux socke
 Unix. Aucun vrai LLM ni service sollicité, aucune dépendance ni unité systemd
 ajoutée ; aucune étape suivante commencée.
 
+Validation de l'étape 9.4 sous Python 3.12 : installation éditable réussie,
+`python -m pytest -q` : 807 tests réussis, dont deux nouveaux pour l'unité
+utilisateur `systemd/simple-aios.service`. Syntaxe validée par
+`systemd-analyze --user verify` (systemd 255), avec le chemin personnel adapté
+au répertoire temporaire du test. Commande `aiosd` exécutée directement depuis
+le venv : connexion du client, historique sans Ollama, permissions privées,
+arrêt SIGTERM, retrait du socket et conservation de SQLite et des logs vérifiés.
+L'unité fonctionne avec les chemins par défaut du CLI, sans privilèges
+supplémentaires ni redémarrage automatique. Utilisation manuelle documentée.
+Aucun gestionnaire systemd n'étant actif ici, le lancement sous son contrôle
+n'a pas été testé ; aucun service n'a été installé ou activé. Aucune dépendance
+ni script d'installation ajouté ; aucune étape suivante commencée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -310,7 +323,7 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 - [done] 9.1 — Séparer le Core du terminal.
 - [done] 9.2 — Daemon local `aiosd`, communication par Unix socket.
 - [done] 9.3 — Connecter le CLI au daemon.
-- [todo] 9.4 — Unité systemd `simple-aios.service`.
+- [done] 9.4 — Unité systemd `simple-aios.service`.
 
 ## Phase 10 — Installation
 
