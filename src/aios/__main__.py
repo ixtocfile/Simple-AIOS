@@ -16,6 +16,7 @@ from aios.process_list import ProcessListTool
 from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
+from aios.system_prompt import SYSTEM_PROMPT
 from aios.systemd_list import SystemdListTool
 from aios.systemd_restart import SystemdRestartTool
 from aios.systemd_status import SystemdStatusTool
@@ -102,7 +103,7 @@ def _tool_feedback(reply: str, registry: ToolRegistry, policy: PolicyEngine) -> 
 
 def _run_shell(provider: LLMProvider) -> None:
     print("Simple-AIOS")
-    messages: list[Message] = []
+    messages: list[Message] = [{"role": "system", "content": SYSTEM_PROMPT}]
     logger = logging.getLogger("aios")
     registry = _build_tool_registry()
     policy = PolicyEngine(registry)

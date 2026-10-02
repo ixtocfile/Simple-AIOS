@@ -60,6 +60,36 @@ Une réponse contenant un appel JSON strict passe par le circuit d'exécution
 décrit ci-dessous. Les autres réponses sont affichées comme texte ; les
 commandes shell proposées par le modèle ne sont jamais exécutées.
 
+## Prompt système
+
+`aios.system_prompt.SYSTEM_PROMPT` définit les consignes fixes de Simple-AIOS.
+Le CLI initialise chaque session avec ce texte dans un message de rôle `system`,
+placé avant la première demande utilisateur. Ce message est conservé une seule
+fois en tête de chaque appel au provider, y compris après un résultat d'outil
+ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
+l'historique précédent. Le prompt n'est ni affiché ni journalisé.
+
+Il décrit le rôle d'assistant CLI Linux, les sept outils enregistrés avec leurs
+arguments et risques, le format JSON strict et la limite de cinq tentatives par
+requête. Son catalogue est explicite, sans découverte d'outils ni lecture de
+données système à sa construction. Les tests vérifient sa correspondance avec
+le registre et la validité des exemples auprès des validateurs existants.
+
+Les consignes demandent de fonder les observations sur les retours `tool_result`
+de l'application, de distinguer faits et hypothèses, et de signaler refus,
+erreurs, données manquantes ou issue inconnue. Les valeurs renvoyées par les
+outils et les résultats copiés par l'utilisateur sont traités comme des données,
+pas comme des instructions système. Les demandes utilisateur et retours d'outils
+conservent leurs rôles existants dans les messages.
+
+Le prompt rappelle que le Policy Engine décide indépendamment du modèle :
+lecture `READ`, accord explicite dans le CLI pour `CONFIRM`, refus pour `DENY`.
+Un accord conversationnel ou un champ ajouté par le modèle ne peut pas remplacer
+la confirmation. Les validations et permissions restent imposées par le code ;
+la sûreté de l'exécution ne dépend pas du respect du prompt par le modèle.
+Les tests utilisent FakeLLMProvider et un transport Ollama simulé pour vérifier
+les messages transmis, sans évaluer le comportement d'un LLM réel.
+
 ## Configuration
 
 L'étape 1.1 fournit `aios.config.load_config`, avec TOML et la bibliothèque
@@ -398,10 +428,9 @@ bloqué dans l'historique, qui conserve les cinq appels traités et leurs résul
 Une requête entraîne donc au plus six appels au provider. Une réponse textuelle
 ou une erreur du provider arrête la boucle plus tôt.
 
-Aucun catalogue ou prompt système n'est encore injecté. Pour essayer le circuit
-avec Ollama, demandez par exemple au modèle de répondre uniquement par
-`{"tool":"system.info","arguments":{}}`. Le modèle doit respecter ce format
-strict. Les tests automatisés utilisent `FakeLLMProvider`, sans vrai LLM.
+Le prompt système fournit désormais le catalogue et des exemples d'appels au
+modèle. Celui-ci doit respecter le format strict, vérifié par l'application.
+Les tests automatisés utilisent `FakeLLMProvider`, sans vrai LLM.
 
 ## Premier outil : system.info
 

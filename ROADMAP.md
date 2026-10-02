@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 6.3 terminée. Aucune étape en cours ; prochaine étape : 7.1,
+État : étape 7.1 terminée. Aucune étape en cours ; prochaine étape : 7.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -152,6 +152,16 @@ transmet succès, refus et erreurs au modèle. Tous les redémarrages sont simul
 avec `systemctl` remplacé et FakeLLMProvider ; aucun service réel n'a été
 redémarré. Aucune étape suivante ajoutée.
 
+Validation de l'étape 7.1 sous Python 3.12 : `python -m pytest -q` : 589 tests
+réussis. Prompt système fixe décrivant le rôle, les sept outils, leurs arguments,
+les résultats réels et les permissions ajouté. Catalogue et risques comparés au
+registre, exemples validés sans exécution et budget d'appels vérifié. Message
+`system` unique en tête de la conversation, conservation après appels d'outils
+ou erreurs, remise à zéro entre sessions et transmission au transport Ollama
+vérifiées. Les textes utilisateur et résultats restent dans leurs rôles prévus,
+sans promotion en instructions système. Tests avec FakeLLMProvider et HTTP
+simulé, sans LLM réel ; aucun nouveau mécanisme de diagnostic ajouté.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -196,7 +206,7 @@ redémarré. Aucune étape suivante ajoutée.
 
 ## Phase 7 — Diagnostic
 
-- [todo] 7.1 — Prompt système : rôle, outils, résultats réels et permissions.
+- [done] 7.1 — Prompt système : rôle, outils, résultats réels et permissions.
 - [todo] 7.2 — Diagnostic général à partir de plusieurs outils READ.
 
 ## Phase 8 — Mémoire
