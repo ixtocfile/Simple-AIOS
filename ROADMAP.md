@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 10.1 terminée. Aucune étape en cours ; prochaine étape : 10.2,
+État : étape 10.2 terminée. Aucune étape en cours ; prochaine étape : 10.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -277,6 +277,20 @@ unité générée validés. Aucun service activé ou démarré, aucun LLM sollic
 Documentation d'utilisation mise à jour ; aucune dépendance ajoutée ni étape
 de désinstallation ou guide Ubuntu/Debian commencée.
 
+Validation de l'étape 10.2 sous Python 3.12 : installation éditable réussie,
+`python -m pytest -q` : 860 tests réussis, dont 26 nouveaux pour la désinstallation.
+Script limité au package du venv et à l'unité générée pour ce dépôt : arrêt et
+désactivation utilisateur avant retrait, puis rechargement de systemd. Refus
+root, validation du venv, unités personnalisées ou étrangères, liens symboliques,
+modification concurrente de l'unité, absence d'installation, réexécution,
+XDG_CONFIG_HOME, erreurs et timeouts couverts. Dépôt, venv, autres paquets,
+configurations, historique et logs conservés. Installation puis désinstallation
+réelles vérifiées sous un compte non privilégié dans un dossier temporaire,
+hors réseau avec les outils de construction locaux et systemctl simulé :
+package et entrée aiosd retirés, données préservées et seconde exécution réussie.
+Aucun service réel modifié ni LLM sollicité. Documentation d'utilisation mise
+à jour ; aucune dépendance ajoutée ni guide Ubuntu/Debian commencé.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -342,5 +356,5 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 ## Phase 10 — Installation
 
 - [done] 10.1 — Script d'installation simple.
-- [todo] 10.2 — Script de désinstallation.
+- [done] 10.2 — Script de désinstallation.
 - [todo] 10.3 — Guide d'installation Ubuntu/Debian.

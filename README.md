@@ -56,6 +56,41 @@ et l'activation du service se font manuellement. L'activation à l'ouverture de
 session est décrite dans « Unité systemd utilisateur ». Pour réinstaller après
 une mise à jour du dépôt, arrêtez d'abord le daemon, puis relancez le script.
 
+## Désinstallation
+
+Avec le même compte utilisateur et le même `XDG_CONFIG_HOME` qu'à l'installation,
+depuis le dépôt utilisé par `scripts/install.py` :
+
+```bash
+python3 scripts/uninstall.py
+```
+
+Fermez le CLI et arrêtez au préalable tout daemon lancé manuellement. Le script
+reconnaît l'unité générée pour ce dépôt, arrête puis désactive
+`simple-aios.service` avec `systemctl --user`, désinstalle uniquement le package
+`simple-aios` du venv, retire l'unité et recharge le gestionnaire utilisateur.
+Le dépôt, le venv et ses autres paquets, les fichiers TOML, l'historique SQLite
+et les logs sont conservés. Aucune option de purge des données n'est prévue.
+
+Python 3.12 ou ultérieur est requis, et l'exécution avec root est refusée.
+Une unité personnalisée, liée à un autre dépôt, ou des fichiers dans son dossier
+local `simple-aios.service.d` provoquent un refus avant toute action. Les liens
+symboliques à l'emplacement de l'unité, de ce dossier ou du venv sont également
+refusés. Ces installations nécessitent un examen manuel pour préserver leurs
+personnalisations. Le Python du venv est vérifié avant toute désinstallation.
+
+Si l'unité existe, un gestionnaire systemd utilisateur accessible est nécessaire.
+Un échec d'arrêt ou de désactivation interrompt le script avant le retrait du
+package ou de l'unité. Chaque sous-processus a un délai de 30 secondes ; les
+erreurs sont signalées avec un code de sortie non nul, sans poursuivre les
+actions suivantes. Les actions déjà réussies ne sont pas annulées : si le
+rechargement final échoue, relancez `systemctl --user daemon-reload` après avoir
+rétabli l'accès au gestionnaire.
+
+Une unité absente n'entraîne aucune commande systemd ; un venv absent n'entraîne
+aucun appel à pip. Une nouvelle exécution après désinstallation est sans effet
+sur les fichiers conservés. Pour réinstaller, relancez `scripts/install.py`.
+
 ## Développement
 
 Python 3.12 ou ultérieur est requis. Depuis la racine du dépôt :
