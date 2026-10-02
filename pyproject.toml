@@ -11,6 +11,9 @@ requires-python = ">=3.12"
 license = {file = "LICENSE"}
 dependencies = []
 
+[project.scripts]
+aiosd = "aios.daemon:main"
+
 [project.optional-dependencies]
 test = ["pytest>=8"]
 

@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 9.1 terminée. Aucune étape en cours ; prochaine étape : 9.2,
+État : étape 9.2 terminée. Aucune étape en cours ; prochaine étape : 9.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -221,6 +221,20 @@ conservés après erreur du provider et statuts d'interruption testés sans LLM
 ni action système réelle. Les tests CLI existants passent après adaptation.
 Aucune dépendance ajoutée, aucun daemon ni socket implémenté.
 
+Validation de l'étape 9.2 sous Python 3.12 : installation éditable réussie,
+`python -m pytest -q` : 746 tests réussis, dont 41 nouveaux pour le daemon.
+Entrée `aiosd`, configuration existante et socket Unix `0600` vérifiés avec de
+vrais échanges entre processus. Protocole JSON par ligne pour conversation,
+diagnostic et historique ; limites de taille et d'attente, champs stricts,
+UTF-8, trames fragmentées et sessions distinctes testés. Policy, refus sans
+confirmation, budget de cinq appels, persistance et conservation des résultats
+après erreur ou déconnexion vérifiés avec FakeLLMProvider et outils simulés.
+Arrêts SIGINT/SIGTERM, fermeture SQLite, préservation des chemins existants,
+nettoyage du socket et erreurs sans détails sensibles testés. Les tests ont
+nécessité l'accès aux sockets Unix, bloqués par le sandbox initial. Aucun LLM
+ni service réel sollicité, aucune dépendance ajoutée. CLI et unité systemd
+laissés aux étapes suivantes.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -279,7 +293,7 @@ Aucune dépendance ajoutée, aucun daemon ni socket implémenté.
 Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 - [done] 9.1 — Séparer le Core du terminal.
-- [todo] 9.2 — Daemon local `aiosd`, communication par Unix socket.
+- [done] 9.2 — Daemon local `aiosd`, communication par Unix socket.
 - [todo] 9.3 — Connecter le CLI au daemon.
 - [todo] 9.4 — Unité systemd `simple-aios.service`.
 

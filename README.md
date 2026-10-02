@@ -10,6 +10,7 @@ Les six outils de lecture système sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
 permet aussi de redémarrer un service après confirmation explicite dans le CLI.
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
+Le daemon local `aiosd` expose aussi le Core par un socket Unix privé.
 
 ## Développement
 
@@ -94,6 +95,83 @@ l'action ; sans gestionnaire, elle est refusée. Le gestionnaire peut présenter
 un refus `DENY`, mais ne peut pas l'annuler. Le diagnostic reste limité à READ.
 Les tests utilisent directement le Core avec `FakeLLMProvider`, des outils
 simulés et les opérations de terminal interdites.
+
+## Daemon local `aiosd`
+
+Après installation du package, lancez le serveur en premier plan :
+
+```bash
+aiosd
+```
+
+`python -m aios.daemon` est équivalent. `--config FILE` charge la configuration
+TOML existante ; `--socket PATH` permet de choisir le chemin du socket. Par
+défaut, il se trouve dans `<data_dir>/aiosd.sock`, soit
+`~/.local/share/simple-aios/aiosd.sock`. Le socket Unix est créé avec les
+permissions `0600`, sans écoute TCP. Un chemin trop long pour un socket Unix
+doit être remplacé par un chemin plus court avec `--socket`.
+
+Le serveur traite un client à la fois, jusqu'à sa déconnexion. Chaque connexion
+crée une session Core distincte ; plusieurs demandes sur cette connexion
+partagent leur contexte. Une reconnexion repart sans contexte conversationnel,
+mais retrouve l'historique SQLite du même `data_dir`. Le daemon possède la
+connexion SQLite et les logs pendant toute sa durée de vie.
+
+Le protocole transporte un objet JSON UTF-8 par ligne, terminé par `\n`.
+Les requêtes acceptées ont exactement les champs suivants :
+
+| Requête | Champ `result` en cas de succès |
+| --- | --- |
+| `{"method":"chat","message":"Bonjour"}` | Réponse textuelle du Core. |
+| `{"method":"diagnose"}` | Synthèse des cinq contrôles READ. |
+| `{"method":"history"}` | Liste des dernières tâches et de leurs outils. |
+
+La réponse est `{"ok":true,"result":...}` ou `{"ok":false,"error":"..."}`,
+également sur une seule ligne. Les caractères de contrôle sont échappés dans
+le JSON. La requête est limitée à 65 536 octets, fin de ligne comprise ; le
+message de conversation doit être une chaîne non vide. Champs supplémentaires,
+doublons, UTF-8 invalide et requêtes incomplètes sont refusés avant le Core.
+Une requête invalide produit `Invalid request` et ferme cette connexion.
+Une lecture ou écriture bloquée pendant 30 secondes ferme aussi la connexion ;
+ce délai ne limite pas le traitement du provider, qui garde son propre timeout.
+
+Les validations, la policy et la limite de cinq appels restent celles du Core.
+Le daemon n'a pas de confirmation interactive : `CONFIRM` et `DENY` sont refusés.
+Aucun champ de requête ni accord conversationnel ne peut donner une permission.
+Une erreur Ollama renvoie `Provider unavailable` et permet de continuer la
+session, en conservant les résultats déjà obtenus. Une erreur de stockage ou
+interne renvoie `Request failed`, puis arrête le daemon avec le code 1.
+Les détails des erreurs et les échanges ne sont pas copiés dans les logs.
+
+Fermer le client ne garantit pas l'annulation d'une demande déjà commencée.
+Ses résultats peuvent être persistés même si la réponse n'a pas été reçue ;
+le serveur ne relance jamais automatiquement la demande ou ses outils.
+
+Ctrl+C ou `SIGTERM` ferme les ressources et retire le socket créé par ce
+processus. Tout chemin déjà présent est refusé au démarrage, y compris un
+socket laissé par un arrêt brutal : vérifier que son serveur est arrêté avant
+de retirer manuellement ce socket. Le nettoyage préserve un fichier qui aurait
+remplacé le socket pendant l'exécution.
+
+Pour vérifier la communication sans appeler Ollama, depuis un autre terminal
+avec le daemon démarré et sa configuration par défaut :
+
+```python
+import json
+from pathlib import Path
+import socket
+
+path = Path.home() / ".local/share/simple-aios/aiosd.sock"
+with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    client.settimeout(5)
+    client.connect(str(path))
+    with client.makefile("rb") as stream:
+        client.sendall(b'{"method":"history"}\n')
+        print(json.loads(stream.readline()))
+```
+
+À l'étape 9.2, `python -m aios` utilise encore son Core local. Le raccordement
+du CLI au daemon reste prévu à l'étape 9.3, l'unité systemd à l'étape 9.4.
 
 ## Historique des tâches
 
