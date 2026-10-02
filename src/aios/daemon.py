@@ -2,10 +2,10 @@
 
 import argparse
 from contextlib import closing, contextmanager
-import json
 import logging
 import os
 from pathlib import Path
+import secrets
 import signal
 import socket
 import stat
@@ -15,40 +15,23 @@ from aios.app_logging import close_logging, configure_logging
 from aios.config import load_config
 from aios.core import Core
 from aios.history import TaskHistory
+from aios.ipc import MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, decode_frame, encode_frame
 from aios.llm import LLMProvider
 from aios.ollama import OllamaError, OllamaProvider
+from aios.policy import PolicyDecision
 
 
-MAX_REQUEST_BYTES = 64 * 1024
 CLIENT_TIMEOUT = 30.0
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate field")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value):
-    raise ValueError("Non-finite number")
-
-
 def _parse_request(raw: bytes) -> dict[str, object]:
-    if len(raw) > MAX_REQUEST_BYTES or not raw.endswith(b"\n"):
-        raise ValueError("Invalid frame")
-    request = json.loads(
-        raw.decode("utf-8"), object_pairs_hook=_unique_object,
-        parse_constant=_reject_constant,
-    )
-    if not isinstance(request, dict):
-        raise ValueError("Invalid request")
+    request = decode_frame(raw, MAX_REQUEST_BYTES)
     method = request.get("method")
-    if method == "chat" and request.keys() == {"method", "message"}:
+    if method == "chat" and request.keys() in (
+        {"method", "message"}, {"method", "message", "confirmations"},
+    ):
         message = request["message"]
-        if isinstance(message, str) and message.strip():
+        if isinstance(message, str) and message.strip() and type(request.get("confirmations", False)) is bool:
             message.encode("utf-8")  # Reject unpaired Unicode surrogates.
             return request
     elif method in ("diagnose", "history") and request.keys() == {"method"}:
@@ -57,20 +40,60 @@ def _parse_request(raw: bytes) -> dict[str, object]:
 
 
 def _send(connection: socket.socket, response: dict[str, object]) -> bool:
-    payload = (json.dumps(response, ensure_ascii=True, allow_nan=False) + "\n").encode("ascii")
     try:
+        payload = encode_frame(response, MAX_RESPONSE_BYTES)
+    except (ValueError, RecursionError):
+        payload = encode_frame({"ok": False, "error": "Invalid response"}, MAX_RESPONSE_BYTES)
+    try:
+        connection.settimeout(CLIENT_TIMEOUT)
         connection.sendall(payload)
     except OSError:
         return False
     return True
 
 
-def _handle_client(connection: socket.socket, core: Core) -> None:
+def _read_request(connection, stream):
+    # A user may think or read a confirmation indefinitely; partial frames are bounded.
+    connection.settimeout(None)
+    first = stream.read(1)
+    if not first or first == b"\n":
+        return first
     connection.settimeout(CLIENT_TIMEOUT)
+    return first + stream.readline(MAX_REQUEST_BYTES)
+
+
+def _handle_client(connection: socket.socket, provider: LLMProvider, history: TaskHistory) -> None:
     with connection.makefile("rb") as stream:
+        enabled = False
+        broken = False
+
+        def authorize(decision, name, arguments):
+            nonlocal broken
+            if broken or not enabled or decision is not PolicyDecision.CONFIRM:
+                return False
+            identifier = secrets.token_hex(16)
+            if not _send(connection, {
+                "event": "confirmation", "id": identifier, "tool": name, "arguments": arguments,
+            }):
+                broken = True
+                return False
+            try:
+                answer = decode_frame(_read_request(connection, stream), MAX_REQUEST_BYTES)
+                if (
+                    answer.keys() != {"method", "id", "accepted"}
+                    or answer["method"] != "confirm" or answer["id"] != identifier
+                    or type(answer["accepted"]) is not bool
+                ):
+                    raise ValueError("Invalid consent")
+                return answer["accepted"] is True
+            except (OSError, ValueError, RecursionError):
+                broken = True
+                return False
+
+        core = Core(provider, history, permission_handler=authorize)
         while True:
             try:
-                raw = stream.readline(MAX_REQUEST_BYTES + 1)
+                raw = _read_request(connection, stream)
             except OSError:
                 return
             if not raw:
@@ -81,6 +104,7 @@ def _handle_client(connection: socket.socket, core: Core) -> None:
                 _send(connection, {"ok": False, "error": "Invalid request"})
                 return
 
+            enabled = request.get("confirmations") is True
             try:
                 if request["method"] == "chat":
                     result = core.chat(request["message"])
@@ -96,6 +120,8 @@ def _handle_client(connection: socket.socket, core: Core) -> None:
                 # Stop on storage/internal errors; never retry a possible action.
                 _send(connection, {"ok": False, "error": "Request failed"})
                 raise
+            if broken:
+                return
             if not _send(connection, response):
                 return
 
@@ -135,8 +161,7 @@ def serve(socket_path: Path, provider: LLMProvider, history: TaskHistory) -> Non
         while True:
             connection, _ = listener.accept()
             with connection:
-                # No terminal consent is available: CONFIRM and DENY stay refused.
-                _handle_client(connection, Core(provider, history))
+                _handle_client(connection, provider, history)
 
 
 def _interrupt(signum, frame):

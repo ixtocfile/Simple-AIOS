@@ -123,7 +123,7 @@ def test_sensitive_tool_names_strings_and_errors_are_masked_before_storage(tmp_p
 
 
 @pytest.fixture
-def tool_session(tmp_path, monkeypatch):
+def tool_session(tmp_path, monkeypatch, core_client):
     registry = build_tool_registry()
     executions = {}
     for tool in registry.list_tools():
@@ -136,7 +136,7 @@ def tool_session(tmp_path, monkeypatch):
     def run(provider, entries):
         reader = Mock(side_effect=entries)
         monkeypatch.setattr("builtins.input", reader)
-        monkeypatch.setattr("aios.__main__.OllamaProvider", lambda _: provider)
+        core_client(provider)
         code = main([])
         assert reader.call_count == len(entries)
         return code

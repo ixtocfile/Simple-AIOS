@@ -32,7 +32,7 @@ READINGS = {
 
 
 @pytest.fixture
-def diagnostic(tmp_path, monkeypatch):
+def diagnostic(tmp_path, monkeypatch, core_client):
     registry = build_tool_registry()
     executions = {}
     for tool in registry.list_tools():
@@ -45,7 +45,7 @@ def diagnostic(tmp_path, monkeypatch):
     def run(provider, entries):
         reader = Mock(side_effect=entries)
         monkeypatch.setattr("builtins.input", reader)
-        monkeypatch.setattr("aios.__main__.OllamaProvider", lambda _: provider)
+        core_client(provider)
         assert main([]) == 0
         assert reader.call_count == len(entries)
         for messages in provider.calls:

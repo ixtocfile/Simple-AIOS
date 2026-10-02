@@ -10,11 +10,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.__main__ import main
+from aios.__main__ import authorize_tool_call, main
 from aios.core import build_tool_registry
 from aios.config import Config
 from aios.llm import FakeLLMProvider
-from aios.ollama import OllamaError
+from aios.ollama import OllamaError, OllamaProvider
 from aios.policy import PolicyEngine
 from aios.system_prompt import SYSTEM_PROMPT
 from aios.tools import RiskLevel, Tool, ToolRegistry, ToolResult
@@ -50,7 +50,6 @@ SYSTEM_MESSAGE = {"role": "system", "content": SYSTEM_PROMPT}
             id="unknown-command-then-help",
         ),
         pytest.param("", "ai> \n", id="end-of-input"),
-        pytest.param("/history\n/exit\n", "ai> Historique vide.\nai> ", id="empty-history"),
     ],
 )
 def test_interactive_shell(tmp_path, commands, transcript):
@@ -147,16 +146,15 @@ def test_application_error_logs_type_without_sensitive_message(tmp_path, monkeyp
 
 
 @pytest.fixture
-def cli_session(tmp_path, monkeypatch):
+def cli_session(tmp_path, monkeypatch, core_client):
     config = Config(data_dir=tmp_path)
     monkeypatch.setattr("aios.__main__.load_config", lambda _: config)
 
     def run(provider, entries):
-        constructor = Mock(return_value=provider)
-        monkeypatch.setattr("aios.__main__.OllamaProvider", constructor)
+        constructor = core_client(provider)
         monkeypatch.setattr("builtins.input", Mock(side_effect=entries))
         status = main([])
-        constructor.assert_called_once_with(config)
+        constructor.assert_called_once_with(tmp_path / "aiosd.sock", permission_handler=authorize_tool_call)
         for call in provider.calls:
             assert call[0] == SYSTEM_MESSAGE
             assert [message for message in call if message["role"] == "system"] == [SYSTEM_MESSAGE]
@@ -242,9 +240,10 @@ def test_untrusted_user_and_tool_content_cannot_become_system_messages(cli_sessi
 
 
 def test_cli_transmits_system_prompt_to_ollama_without_printing_or_logging_it(
-    tmp_path, monkeypatch, capsys,
+    tmp_path, monkeypatch, capsys, core_client,
 ):
     config = Config(data_dir=tmp_path)
+    core_client(OllamaProvider(config))
     response = BytesIO(b'{"message":{"content":"Bonjour"}}')
     opener = Mock(return_value=response)
     monkeypatch.setattr("aios.ollama.urlopen", opener)
@@ -304,7 +303,7 @@ def test_provider_failure_preserves_successful_history_and_allows_retry(
         "Impossible d'obtenir une réponse du LLM. Vérifiez Ollama et le modèle configuré.\n"
     )
     logs = (tmp_path / "logs/simple-aios.log").read_text()
-    assert "ERROR Provider error (OllamaError)" in logs
+    assert "ERROR Provider error (DaemonProviderError)" in logs
     assert "Application stopped" in logs
     assert "private" not in logs
     assert "secret-test-token" not in logs + captured.out + captured.err
@@ -334,46 +333,53 @@ def test_conversation_can_end_at_input(cli_session, capsys, ending):
     assert captured.err == ""
 
 
-def test_cli_constructs_provider_from_toml(tmp_path, monkeypatch):
+def test_cli_selects_socket_from_toml_without_constructing_a_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "settings.toml"
     config_path.write_text(
         'provider = "ollama"\nmodel = "custom-model"\n'
         'ollama_url = "http://localhost:12345"\n'
-        f'data_dir = "{tmp_path.as_posix()}"\n',
-        encoding="utf-8",
+        f'data_dir = "{tmp_path.as_posix()}"\n', encoding="utf-8",
     )
-    fake = FakeLLMProvider(["Réponse"])
-    constructor = Mock(return_value=fake)
-    monkeypatch.setattr("aios.__main__.OllamaProvider", constructor)
+    client = Mock()
+    client.chat.return_value = "Réponse"
+    constructor = Mock(return_value=client)
+    monkeypatch.setattr("aios.__main__.DaemonClient", constructor)
     monkeypatch.setattr("builtins.input", Mock(side_effect=["Bonjour", "/exit"]))
-
     assert main(["--config", str(config_path)]) == 0
+    constructor.assert_called_once_with(tmp_path / "aiosd.sock", permission_handler=authorize_tool_call)
+    client.chat.assert_called_once_with("Bonjour")
+    client.close.assert_called_once_with()
+    assert not (tmp_path / "history.sqlite3").exists()
 
-    constructor.assert_called_once_with(Config(
-        model="custom-model", ollama_url="http://localhost:12345", data_dir=tmp_path,
-    ))
-    assert fake.calls == [[SYSTEM_MESSAGE, {"role": "user", "content": "Bonjour"}]]
 
-
-def test_unsupported_provider_fails_without_network_or_sensitive_details(
-    tmp_path, monkeypatch, capsys,
-):
+def test_cli_leaves_provider_selection_to_daemon(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(
         provider="unsupported-secret-provider", data_dir=tmp_path,
     ))
-    constructor = Mock()
-    monkeypatch.setattr("aios.__main__.OllamaProvider", constructor)
-
-    assert main([]) == 1
-
+    constructor = Mock(side_effect=AssertionError("No local provider"))
+    monkeypatch.setattr("aios.ollama.OllamaProvider", constructor)
+    monkeypatch.setattr("builtins.input", Mock(side_effect=["/exit"]))
+    assert main([]) == 0
     constructor.assert_not_called()
     captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == 'Provider LLM non pris en charge. Utilisez provider = "ollama".\n'
+    assert captured.out == "Simple-AIOS\n" and captured.err == ""
     logs = (tmp_path / "logs/simple-aios.log").read_text()
-    assert "ERROR Unsupported LLM provider" in logs
     assert "Application stopped" in logs
     assert "unsupported-secret-provider" not in logs + captured.err
+
+
+def test_missing_daemon_fails_clearly_without_local_history_or_fallback(tmp_path):
+    config = tmp_path / "config.toml"
+    config.write_text('data_dir = "data"\n')
+    result = subprocess.run(
+        [sys.executable, "-I", "-m", "aios", "--config", str(config)],
+        cwd=tmp_path, input="/help\n/history\n/exit\n", text=True, capture_output=True, timeout=5,
+    )
+    assert result.returncode == 1
+    assert "/help" in result.stdout
+    assert result.stderr == "Impossible de communiquer avec aiosd. Vérifiez le daemon et le socket.\n"
+    assert not (tmp_path / "data/history.sqlite3").exists()
+    assert not (tmp_path / "data/aiosd.sock").exists()
 
 
 class RecordingTool(Tool):
@@ -932,5 +938,5 @@ def test_cli_preserves_tool_outcome_after_follow_up_provider_failure(
     assert captured.out == "Simple-AIOS\nDisponible\n"
     assert "Impossible d'obtenir une réponse du LLM." in captured.err
     logs = (tmp_path / "logs/simple-aios.log").read_text()
-    assert "ERROR Provider error (OllamaError)" in logs
+    assert "ERROR Provider error (DaemonProviderError)" in logs
     assert "secret-value" not in logs + captured.out + captured.err

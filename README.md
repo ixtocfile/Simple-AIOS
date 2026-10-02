@@ -20,6 +20,14 @@ Python 3.12 ou ultérieur est requis. Depuis la racine du dépôt :
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e '.[test]'
+aiosd
+```
+
+Laissez le daemon ouvert, puis lancez le CLI dans un second terminal, depuis
+la racine du dépôt :
+
+```bash
+. .venv/bin/activate
 python -m aios
 ```
 
@@ -39,15 +47,15 @@ Commandes disponibles :
 - `/exit` : quitter.
 
 Une entrée vide affiche une nouvelle invite. Une commande inconnue commençant
-par `/` affiche un message d'aide et laisse le shell ouvert. `/help`, `/version`,
-`/history` et `/exit` restent locales et ne sont pas envoyées au modèle. Ctrl+D (fin d'entrée) ou
-Ctrl+C ferment proprement le shell ; Ctrl+C fonctionne aussi pendant un appel
-au provider.
+par `/` affiche un message d'aide et laisse le shell ouvert. `/help`, `/version`
+et `/exit` restent locales. `/history` consulte le daemon sans appeler le modèle.
+Ctrl+D (fin d'entrée) ou Ctrl+C ferment proprement le shell ; Ctrl+C fonctionne
+aussi pendant un appel au provider.
 
 ## Conversation
 
-Entrez un message à l'invite `ai>` pour l'envoyer à Ollama. Le serveur doit être
-accessible et le modèle configuré déjà installé. Le CLI affiche la réponse,
+Entrez un message à l'invite `ai>` pour l'envoyer au daemon, qui interroge Ollama.
+Ollama doit être accessible et le modèle configuré déjà installé. Le CLI affiche la réponse,
 puis propose une nouvelle invite.
 
 Les échanges réussis sont conservés en mémoire pendant la session et transmis
@@ -81,9 +89,9 @@ Par défaut, `build_tool_registry()` fournit les sept outils existants.
   ni modifier le contexte de conversation.
 
 Le Core ne lit aucune entrée, n'affiche rien et ne configure pas les logs.
-Le CLI conserve la configuration, les commandes locales, l'affichage et la
-confirmation interactive. L'appelant fournit le provider et `TaskHistory`,
-et reste responsable de leur durée de vie ; le CLI ferme la base à sa sortie.
+Le CLI conserve les commandes locales, l'affichage et la confirmation interactive.
+Le daemon construit le provider, ouvre `TaskHistory` et fournit ces objets au
+Core. Il reste responsable de leur durée de vie et ferme la base à son arrêt.
 Chaque instance de Core possède son propre contexte. Les erreurs et
 interruptions se propagent à l'appelant après la tentative d'enregistrement
 du statut, sans relance automatique.
@@ -132,12 +140,15 @@ le JSON. La requête est limitée à 65 536 octets, fin de ligne comprise ; le
 message de conversation doit être une chaîne non vide. Champs supplémentaires,
 doublons, UTF-8 invalide et requêtes incomplètes sont refusés avant le Core.
 Une requête invalide produit `Invalid request` et ferme cette connexion.
-Une lecture ou écriture bloquée pendant 30 secondes ferme aussi la connexion ;
-ce délai ne limite pas le traitement du provider, qui garde son propre timeout.
+Une réception de trame déjà entamée ou une écriture bloquée pendant 30 secondes
+ferme aussi la connexion. L'attente du premier octet reste sans délai pour
+laisser l'utilisateur lire ou saisir sa réponse. Le provider garde son propre timeout.
 
 Les validations, la policy et la limite de cinq appels restent celles du Core.
-Le daemon n'a pas de confirmation interactive : `CONFIRM` et `DENY` sont refusés.
-Aucun champ de requête ni accord conversationnel ne peut donner une permission.
+Par défaut, `CONFIRM` et `DENY` sont refusés. Un client peut ajouter le booléen
+`"confirmations":true` à une requête `chat` pour recevoir les demandes d'accord
+décrites ci-dessous. Ce champ annonce une capacité ; il n'autorise aucune action.
+`DENY` reste toujours refusé, sans demande d'accord.
 Une erreur Ollama renvoie `Provider unavailable` et permet de continuer la
 session, en conservant les résultats déjà obtenus. Une erreur de stockage ou
 interne renvoie `Request failed`, puis arrête le daemon avec le code 1.
@@ -170,12 +181,54 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         print(json.loads(stream.readline()))
 ```
 
-À l'étape 9.2, `python -m aios` utilise encore son Core local. Le raccordement
-du CLI au daemon reste prévu à l'étape 9.3, l'unité systemd à l'étape 9.4.
+L'unité systemd reste prévue à l'étape 9.4.
+
+## CLI connecté au daemon
+
+`python -m aios` utilise `aios.client.DaemonClient`. La connexion est ouverte
+à la première conversation, au premier `/diagnose` ou `/history`, puis réutilisée
+jusqu'à la sortie. `/help`, `/version`, `/exit` et les entrées vides ou inconnues
+fonctionnent sans daemon. Le CLI ne construit aucun Core ni provider, n'ouvre
+pas SQLite et ne lance pas automatiquement `aiosd`.
+
+Les deux programmes acceptent `--config FILE` et `--socket PATH`. Utilisez le
+même chemin de socket ; sans `--socket`, il est déduit du `data_dir` de chaque
+processus. Le CLI utilise aussi son `log_level`, mais seule la configuration
+chargée par `aiosd` choisit le provider, le modèle, l'URL Ollama et la base SQLite.
+Modifier le fichier du CLI ne reconfigure pas un daemon déjà démarré.
+
+Une connexion absente, refusée, perdue ou une réponse invalide produit une
+erreur générique sur stderr et termine le CLI avec le code 1. La connexion
+initiale attend au plus 5 secondes ; les lectures de réponse attendent au plus
+600 secondes chacune. Les réponses sont limitées à 16 Mio. Une demande trop
+volumineuse est refusée avant envoi et rend l'invite disponible. Une erreur
+du provider garde la session ouverte. Aucun échec ne provoque de reconnexion,
+de renvoi automatique ou d'exécution locale.
+
+`/exit`, EOF ou Ctrl+C ferme seulement la connexion du CLI. Le daemon reste
+actif ; une demande déjà commencée peut continuer et être enregistrée, même
+si sa réponse n'est pas reçue. Une nouvelle session repart avec un contexte
+vide et peut consulter l'historique persistant.
+
+Pour une action `CONFIRM`, le daemon envoie une trame intermédiaire :
+
+```json
+{"event":"confirmation","id":"0123456789abcdef0123456789abcdef","tool":"systemd.restart","arguments":{"service":"demo.service"}}
+```
+
+Le CLI présente ces arguments validés et recueille l'accord explicite habituel.
+Il répond `{"method":"confirm","id":"...","accepted":true}` ou `false`, avec
+l'identifiant reçu. Cet identifiant imprévisible est neuf pour chaque action et
+n'est valable que pour la demande en attente sur cette connexion. Le serveur
+accepte uniquement un booléen exact et les trois champs attendus. Une réponse
+malformée, périmée ou perdue refuse l'action et ferme la connexion après le
+traitement en cours. Aucun argument d'exécution n'est repris de cette réponse.
+Le diagnostic READ ne demande jamais de confirmation. Le client refuse aussi
+les invites invalides, répétées ou dépassant cinq confirmations par requête.
 
 ## Historique des tâches
 
-Le CLI utilise `sqlite3`, fourni par Python, pour créer ou ouvrir
+Le daemon utilise `sqlite3`, fourni par Python, pour créer ou ouvrir
 `<data_dir>/history.sqlite3`. Par défaut :
 `~/.local/share/simple-aios/history.sqlite3`. Chaque demande conversationnelle
 et chaque `/diagnose` crée une ligne dans la table `tasks` avant tout appel au
@@ -191,7 +244,7 @@ immédiatement dans SQLite, puis seul son statut est mis à jour :
 | `running` | Traitement commencé, sans statut final enregistré. |
 | `completed` | Traitement terminé et réponse finale prête à être affichée. |
 | `failed` | Erreur du provider ou erreur inattendue pendant le traitement. |
-| `interrupted` | Interruption pendant le traitement, notamment Ctrl+C. |
+| `interrupted` | Interruption du Core dans le daemon, notamment SIGINT ou SIGTERM. |
 
 `completed` décrit la fin du traitement par le Core, pas la réussite de toutes
 les actions demandées ni l'exactitude du texte du modèle. Une réponse expliquant
@@ -203,7 +256,7 @@ si cet outil a déjà eu un effet ; aucune action n'est relancée automatiquemen
 Les tâches restent disponibles entre sessions sans être réinjectées dans le
 contexte du modèle. Un arrêt brutal ou l'impossibilité d'écrire le statut final
 peut laisser `running` : la réouverture ne suppose pas que la tâche a réussi
-et ne la reprend pas. Si SQLite ne peut pas être initialisé ou écrit, le CLI
+et ne la reprend pas. Si SQLite ne peut pas être initialisé ou écrit, le daemon
 s'arrête avec le code 1 et son message d'erreur générique habituel. Une erreur
 sur l'insertion initiale empêche tout traitement de cette demande. Les connexions
 sont fermées à la sortie ; les requêtes SQL utilisent des paramètres liés.
@@ -240,7 +293,7 @@ et exécution. Le statut final et le résultat sont enregistrés avant le procha
 appel au modèle. `succeeded` correspond à un `ToolResult.success` vrai ; `failed`
 couvre aussi les appels invalides, inconnus ou refusés. Un résultat non
 sérialisable est conservé comme l'échec `Invalid tool result` transmis au modèle.
-Un Ctrl+C propagé pendant le traitement donne `interrupted`, avec `result` nul :
+Une interruption propagée dans le Core donne `interrupted`, avec `result` nul :
 l'historique n'affirme pas qu'une action commencée a été annulée.
 
 Un JSON d'appel mal formé est enregistré avec `tool` et `arguments` nuls, sans
@@ -262,14 +315,14 @@ Une erreur du provider après l'outil laisse son résultat enregistré. Un arrê
 brutal ou un échec d'écriture du résultat peut laisser l'appel `running`, avec
 une issue inconnue ; aucune reprise ni réexécution automatique n'est effectuée.
 Un échec de l'insertion initiale empêche le traitement de cet appel. Comme pour
-les tâches, une erreur de stockage termine le CLI proprement avec le code 1,
+les tâches, une erreur de stockage termine le daemon et le CLI avec le code 1,
 sans enregistrer le détail de l'exception dans les logs. Les appels Python
 directs aux outils restent indépendants de cette persistance gérée par le Core.
 
 ## Consulter l'historique
 
 Saisissez `/history` sans argument dans le CLI. La commande consulte la base
-du `data_dir` configuré, y compris les sessions précédentes. Elle affiche les
+du `data_dir` du daemon, y compris les sessions précédentes. Elle affiche les
 20 dernières tâches, par identifiant décroissant, avec leurs appels d'outils
 par identifiant croissant sous chaque tâche. Chaque consultation relit la base.
 Si aucune tâche n'est enregistrée, elle affiche `Historique vide.`.
@@ -283,7 +336,7 @@ le terminal ou imiter une nouvelle invite. Les valeurs nulles et les statuts
 `running` ou `interrupted` sont affichés tels qu'enregistrés, sans supposer une
 réussite. Les données déjà masquées restent masquées.
 
-La consultation est locale et en lecture seule : elle ne crée aucune tâche
+La consultation passe par le socket local et reste en lecture seule : elle ne crée aucune tâche
 ni tentative d'outil, n'exécute aucun outil et ne sollicite pas Ollama. Elle
 n'ajoute pas les données consultées au contexte conversationnel. Leur contenu
 n'est pas écrit dans les logs applicatifs. Une erreur de lecture SQLite ou
@@ -402,9 +455,10 @@ Le CLI utilise les valeurs par défaut, ou un fichier TOML fourni explicitement 
 python -m aios --config config/example.toml
 ```
 
-Le CLI prend actuellement en charge uniquement `provider = "ollama"` et utilise
-les paramètres `model` et `ollama_url`. Une autre valeur de `provider` produit
-un message d'erreur et un code de sortie 1.
+Le daemon charge son fichier avec `aiosd --config config/example.toml` et prend
+actuellement en charge uniquement `provider = "ollama"`. Il utilise les paramètres
+`model` et `ollama_url`. Une autre valeur de `provider` termine le daemon avec
+un message d'erreur et le code 1. Le CLI ne transmet pas sa configuration au daemon.
 
 ## Logs
 
@@ -601,14 +655,15 @@ l'affichage est également refusé avant toute saisie.
 Les caractères de contrôle des noms et arguments sont échappés à l'affichage.
 Les arguments et réponses de confirmation ne sont pas écrits dans les logs
 applicatifs. Les arguments filtrés figurent dans l'historique des outils. La saisie
-de confirmation reste locale ; le modèle reçoit uniquement le résultat structuré
+de confirmation reste dans le terminal ; seul le booléen d'accord et son
+identifiant sont transmis au daemon. Le modèle reçoit uniquement le résultat structuré
 de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
 action. Les six outils de lecture sont classés `READ` et `systemd.restart`
-exige une confirmation. Le Core appelle ce composant fourni par le CLI avec les
-arguments déjà validés et normalisés, juste avant l'exécution de l'outil.
+exige une confirmation. Le daemon transmet au CLI les arguments déjà validés
+et normalisés, puis renvoie son accord au Core juste avant l'exécution de l'outil.
 
 ## Format JSON des appels d'outils
 

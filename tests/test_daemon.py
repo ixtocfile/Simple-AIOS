@@ -12,10 +12,14 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import time
+from unittest.mock import Mock
 
 import pytest
 
 from aios.daemon import MAX_REQUEST_BYTES, _listener, main
+from aios.__main__ import main as cli_main
+from aios.client import DaemonClient, DaemonError
+from aios.config import Config
 
 
 # Run the real entry point in a separate process; only external effects are faked.
@@ -191,6 +195,8 @@ def test_stream_framing_accepts_fragmented_and_concatenated_requests(start_daemo
     b'{"method":"history","method":"diagnose"}\n',
     b'{"method":"history","extra":true}\n',
     b'{"method":"chat","message":"ok","confirmed":true}\n',
+    b'{"method":"chat","message":"ok","confirmations":1}\n',
+    b'{"method":"confirm","id":"preauthorized","accepted":true}\n',
     b'{"method":"chat","message":""}\n',
     b'{"method":"chat","message":"  "}\n',
     b'{"method":"chat","message":42}\n',
@@ -203,7 +209,8 @@ def test_stream_framing_accepts_fragmented_and_concatenated_requests(start_daemo
     b'{"method":"history","extra":' + b"[" * 1500 + b"0" + b"]" * 1500 + b"}\n",
 ], ids=[
     "empty", "missing-method", "malformed", "array", "unknown-method", "wrong-method-type",
-    "duplicate-field", "extra-field", "injected-consent", "empty-message", "blank-message",
+    "duplicate-field", "extra-field", "injected-consent", "invalid-capability", "preauthorized",
+    "empty-message", "blank-message",
     "wrong-message-type", "non-finite", "surrogate", "invalid-utf8", "truncated",
     "multiple-objects", "oversized", "too-deep",
 ])
@@ -408,3 +415,138 @@ def test_invalid_configuration_or_unsupported_provider_never_starts_a_socket(dae
     assert not (daemon_dir / "data/aiosd.sock").exists()
     captured = capsys.readouterr()
     assert captured.out == "" and "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_installed_cli_uses_daemon_for_chat_diagnostic_and_history(start_daemon, daemon_dir, custom):
+    process, path = start_daemon(["Bonjour du daemon", "Suite du daemon", "Bilan du daemon"], custom=custom)
+    command = [sys.executable, "-I", "-m", "aios", "--config", str(daemon_dir / "config.toml")]
+    if custom:
+        command += ["--socket", str(path)]
+    result = subprocess.run(
+        command, input="/help\n/version\n\n/unknown\nBonjour\nSuite\n/diagnose\n/history\n/exit\n",
+        text=True, capture_output=True, cwd=daemon_dir, timeout=5,
+    )
+    assert result.returncode == 0 and result.stderr == ""
+    assert all(text in result.stdout for text in (
+        "Simple-AIOS", "Bonjour du daemon", "Suite du daemon", "Bilan du daemon", "Tâche :", "Outil :",
+    ))
+    assert process.poll() is None  # /exit closes the client, not the daemon.
+    with connect(path) as client, client.makefile("rb") as stream:
+        history = exchange(client, stream, {"method": "history"})["result"]
+    report = finish(process)
+    assert len(history) == 3 and len(report["calls"]) == 3
+    assert report["calls"][1] == [*report["calls"][0],
+        {"role": "assistant", "content": "Bonjour du daemon"}, {"role": "user", "content": "Suite"},
+    ]
+    assert len(report["executed"]) == 5
+
+
+@pytest.mark.parametrize(("answer", "interactive", "allowed"), [
+    ("oui", True, True), ("", True, False), ("oui", False, False),
+    (EOFError, True, False), (KeyboardInterrupt, True, False),
+])
+def test_cli_confirmation_round_trip_is_explicit_and_executes_only_in_daemon(
+    start_daemon, daemon_dir, monkeypatch, capsys, answer, interactive, allowed,
+):
+    call = '{"tool":"systemd.restart","arguments":{"service":"demo.service"}}'
+    process, path = start_daemon([call, "Résultat reçu"])
+    entries = ["Redémarre", *([answer] if interactive else []), "/exit"]
+    reader = Mock(side_effect=entries)
+    monkeypatch.setattr("builtins.input", reader)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: interactive)
+    monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(data_dir=daemon_dir / "client"))
+    blocked = Mock(side_effect=AssertionError("No local Core, provider or SQLite"))
+    for target in ("aios.core.Core", "aios.ollama.OllamaProvider", "aios.history.TaskHistory"):
+        monkeypatch.setattr(target, blocked)
+    assert cli_main(["--socket", str(path)]) == 0
+    blocked.assert_not_called()
+    assert reader.call_count == len(entries)
+    assert not (daemon_dir / "client/history.sqlite3").exists()
+    report = finish(process)
+    assert len(report["executed"]) == int(allowed)
+    feedback = json.loads(report["calls"][1][-1]["content"])["tool_result"]
+    assert feedback["success"] is allowed
+    captured = capsys.readouterr()
+    assert "Résultat reçu" in captured.out and captured.err == ""
+    assert "Action à confirmer" in captured.out if interactive else "terminal interactif requis" in captured.out
+
+
+def test_confirmation_nonce_cannot_be_reused_for_the_next_action(start_daemon):
+    call = '{"tool":"systemd.restart","arguments":{"service":"demo.service"}}'
+    process, path = start_daemon([call, call, "Terminé"])
+    with connect(path) as client, client.makefile("rb") as stream:
+        prompt = exchange(client, stream, {"method": "chat", "message": "Redémarre", "confirmations": True})
+        assert prompt["event"] == "confirmation" and prompt["arguments"] == {"service": "demo.service"}
+        second = exchange(client, stream, {"method": "confirm", "id": prompt["id"], "accepted": True})
+        assert second["event"] == "confirmation" and second["id"] != prompt["id"]
+        client.sendall((json.dumps({"method": "confirm", "id": prompt["id"], "accepted": True}) + "\n").encode())
+        assert stream.readline() == b""
+    report = finish(process)
+    assert len(report["executed"]) == 1
+    assert json.loads(report["calls"][2][-1]["content"])["tool_result"]["error"] == "Tool execution denied"
+
+
+@pytest.mark.parametrize("answer", ["truthy", "extra", "disconnect", "partial-timeout"])
+def test_invalid_or_lost_confirmation_fails_closed(start_daemon, answer):
+    call = '{"tool":"systemd.restart","arguments":{"service":"demo.service"}}'
+    process, path = start_daemon([call, "Refus"], timeout=0.1)
+    with connect(path) as client, client.makefile("rb") as stream:
+        prompt = exchange(client, stream, {"method": "chat", "message": "Redémarre", "confirmations": True})
+        response = {"method": "confirm", "id": prompt["id"], "accepted": True}
+        if answer == "disconnect":
+            client.shutdown(socket.SHUT_WR)
+        elif answer == "partial-timeout":
+            client.sendall(b'{"method":')
+        else:
+            if answer == "truthy":
+                response["accepted"] = 1
+            else:
+                response["arguments"] = {"service": "other.service"}
+            client.sendall((json.dumps(response) + "\n").encode())
+        assert stream.readline() == b""
+    report = finish(process)
+    assert report["executed"] == []
+    assert json.loads(report["calls"][1][-1]["content"])["tool_result"]["error"] == "Tool execution denied"
+
+
+def test_invalid_service_is_rejected_before_remote_confirmation(start_daemon):
+    call = '{"tool":"systemd.restart","arguments":{"service":"demo.service;reboot"}}'
+    process, path = start_daemon([call, "Refus"])
+    handler = Mock(return_value=True)
+    with closing(DaemonClient(path, permission_handler=handler)) as client:
+        assert client.chat("Demande") == "Refus"
+    handler.assert_not_called()
+    assert finish(process)["executed"] == []
+
+
+def test_cli_can_continue_after_provider_error_without_reconnection(start_daemon, daemon_dir):
+    process, path = start_daemon(["__provider_error__", "Disponible"])
+    result = subprocess.run(
+        [sys.executable, "-I", "-m", "aios", "--config", str(daemon_dir / "config.toml")],
+        cwd=daemon_dir, input="Demande\nSuite\n/exit\n", text=True, capture_output=True, timeout=5,
+    )
+    assert result.returncode == 0 and "Disponible" in result.stdout
+    assert "Impossible d'obtenir une réponse du LLM" in result.stderr
+    assert "private-provider-detail" not in result.stderr
+    assert len(finish(process)["calls"]) == 2
+
+
+def test_client_session_survives_user_thinking_past_frame_timeout(start_daemon):
+    process, path = start_daemon(["Début", "Suite"], timeout=0.1)
+    with closing(DaemonClient(path)) as client:
+        assert client.chat("Première demande") == "Début"
+        time.sleep(0.15)
+        assert client.chat("Autre demande") == "Suite"
+    calls = finish(process)["calls"]
+    assert calls[1] == [*calls[0], {"role": "assistant", "content": "Début"}, {"role": "user", "content": "Autre demande"}]
+
+
+def test_client_timeout_does_not_retry_or_replace_the_session(start_daemon):
+    process, path = start_daemon(["__wait__"])
+    with closing(DaemonClient(path, timeout=0.1)) as client:
+        with pytest.raises(DaemonError):
+            client.chat("Demande")
+        with pytest.raises(DaemonError):
+            client.chat("Ne pas relancer")
+    assert len(finish(process)["calls"]) == 1

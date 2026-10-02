@@ -54,14 +54,14 @@ def test_recent_tasks_are_bounded_and_keep_their_own_tools_in_call_order(tmp_pat
 
 
 @pytest.fixture
-def run_cli(tmp_path, monkeypatch):
+def run_cli(tmp_path, monkeypatch, core_client):
     monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(data_dir=tmp_path))
 
     def run(entries, provider=None):
         provider = provider or FakeLLMProvider([])
         reader = Mock(side_effect=entries)
         monkeypatch.setattr("builtins.input", reader)
-        monkeypatch.setattr("aios.__main__.OllamaProvider", lambda _: provider)
+        core_client(provider)
         code = main([])
         assert reader.call_count == len(entries)
         return code, provider

@@ -88,7 +88,7 @@ def test_sensitive_task_is_masked_before_any_sqlite_write(tmp_path, task):
 
 
 @pytest.fixture
-def history_cli(tmp_path, monkeypatch):
+def history_cli(tmp_path, monkeypatch, core_client):
     monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(data_dir=tmp_path))
     histories = []
 
@@ -97,12 +97,10 @@ def history_cli(tmp_path, monkeypatch):
         histories.append(history)
         return history
 
-    monkeypatch.setattr("aios.__main__.TaskHistory", create_history)
-
     def run(provider, entries):
         reader = Mock(side_effect=entries)
         monkeypatch.setattr("builtins.input", reader)
-        monkeypatch.setattr("aios.__main__.OllamaProvider", lambda _: provider)
+        core_client(provider, history_factory=create_history)
         result = main([])
         assert reader.call_count == len(entries)
         for history in histories:
@@ -249,12 +247,14 @@ def test_redaction_does_not_modify_the_message_sent_to_the_provider(history_cli,
 def test_unusable_database_stops_before_input_or_provider_without_exposing_details(
     tmp_path, monkeypatch, capsys, failure,
 ):
+    from aios.daemon import main as daemon_main
+
     path = tmp_path / "history.sqlite3"
     if failure == "corrupt":
         path.write_text("private database content")
     else:
         path.mkdir()
-    monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(data_dir=tmp_path))
+    monkeypatch.setattr("aios.daemon.load_config", lambda _: Config(data_dir=tmp_path))
     connect = sqlite3.connect
     connections = []
 
@@ -266,14 +266,14 @@ def test_unusable_database_stops_before_input_or_provider_without_exposing_detai
     monkeypatch.setattr("aios.history.sqlite3.connect", track_connection)
     reader, provider = Mock(), Mock()
     monkeypatch.setattr("builtins.input", reader)
-    monkeypatch.setattr("aios.__main__.OllamaProvider", provider)
-    assert main([]) == 1
+    monkeypatch.setattr("aios.daemon.OllamaProvider", provider)
+    assert daemon_main([]) == 1
     reader.assert_not_called()
     provider.assert_not_called()
     captured = capsys.readouterr()
     logs = (tmp_path / "logs/simple-aios.log").read_text()
     assert "private database content" not in captured.out + captured.err + logs
-    assert "Application stopped" in logs
+    assert "Daemon stopped" in logs
     for connection in connections:
         with pytest.raises(sqlite3.ProgrammingError):
             connection.execute("SELECT 1")

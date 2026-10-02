@@ -5,13 +5,13 @@ from contextlib import closing
 from importlib.metadata import version
 import json
 import logging
+from pathlib import Path
 import sys
 
 from aios.app_logging import close_logging, configure_logging
+from aios.client import DaemonClient, DaemonError, DaemonProviderError, RequestError
 from aios.config import load_config
-from aios.history import HISTORY_LIMIT, TaskHistory
-from aios.core import Core
-from aios.ollama import OllamaError, OllamaProvider
+from aios.history import HISTORY_LIMIT
 from aios.policy import PolicyDecision
 
 
@@ -52,8 +52,8 @@ def authorize_tool_call(
     return accepted
 
 
-def _show_history(core: Core) -> None:
-    tasks = core.recent_history()
+def _show_history(client: DaemonClient) -> None:
+    tasks = client.recent_history()
     if not tasks:
         print("Historique vide.")
         return
@@ -66,7 +66,7 @@ def _show_history(core: Core) -> None:
             print("  Outil : " + json.dumps(call, ensure_ascii=True, allow_nan=False))
 
 
-def _run_shell(core: Core) -> None:
+def _run_shell(client: DaemonClient) -> None:
     print("Simple-AIOS")
     logger = logging.getLogger("aios")
 
@@ -93,13 +93,13 @@ def _run_shell(core: Core) -> None:
         elif command == "/version":
             print(f"Simple-AIOS {version('simple-aios')}")
         elif command == "/history":
-            _show_history(core)
+            _show_history(client)
         elif command.startswith("/") and command != "/diagnose":
             print("Commande inconnue. Tapez /help pour afficher l'aide.")
         else:
             try:
-                reply = core.diagnose() if command == "/diagnose" else core.chat(command)
-            except OllamaError as error:
+                reply = client.diagnose() if command == "/diagnose" else client.chat(command)
+            except DaemonProviderError as error:
                 logger.error("Provider error (%s)", type(error).__name__)
                 print(
                     "Impossible d'obtenir une réponse du LLM. "
@@ -107,12 +107,16 @@ def _run_shell(core: Core) -> None:
                     file=sys.stderr,
                 )
                 continue
+            except RequestError:
+                print("Demande invalide ou trop volumineuse.", file=sys.stderr)
+                continue
             print(reply)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Simple-AIOS")
     parser.add_argument("--config", metavar="FILE", help="Fichier de configuration TOML")
+    parser.add_argument("--socket", type=Path, metavar="PATH", help="Socket Unix (défaut : <data_dir>/aiosd.sock)")
     args = parser.parse_args(argv)
 
     try:
@@ -124,14 +128,16 @@ def main(argv: list[str] | None = None) -> int:
 
     logger.info("Application started")
     try:
-        if config.provider != "ollama":
-            logger.error("Unsupported LLM provider")
-            print('Provider LLM non pris en charge. Utilisez provider = "ollama".', file=sys.stderr)
-            return 1
-        with closing(TaskHistory(config.data_dir)) as history:
-            _run_shell(Core(OllamaProvider(config), history, permission_handler=authorize_tool_call))
+        with closing(DaemonClient(
+            args.socket or config.data_dir / "aiosd.sock", permission_handler=authorize_tool_call,
+        )) as client:
+            _run_shell(client)
     except KeyboardInterrupt:
         print()
+    except DaemonError:
+        logger.error("Daemon communication failed")
+        print("Impossible de communiquer avec aiosd. Vérifiez le daemon et le socket.", file=sys.stderr)
+        return 1
     except Exception as error:
         # Exception messages and tracebacks can contain user data or credentials.
         logger.error("Application error (%s)", type(error).__name__)

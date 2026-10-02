@@ -32,7 +32,7 @@ def confirmation(monkeypatch):
     for method in ("execute", "validate_arguments", "_execute"):
         monkeypatch.setattr(tool, method, blocked)
     monkeypatch.setattr(registry, "execute", blocked)
-    monkeypatch.setattr("aios.__main__.OllamaProvider", blocked)
+    monkeypatch.setattr("aios.__main__.DaemonClient", blocked)
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     reader = Mock(return_value="")
     monkeypatch.setattr("builtins.input", reader)
