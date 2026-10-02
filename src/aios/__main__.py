@@ -1,9 +1,7 @@
 """Entry point for ``python -m aios``."""
 
 import argparse
-from collections.abc import Callable
 from contextlib import closing
-from dataclasses import asdict
 from importlib.metadata import version
 import json
 import logging
@@ -12,36 +10,15 @@ import sys
 from aios.app_logging import close_logging, configure_logging
 from aios.config import load_config
 from aios.history import HISTORY_LIMIT, TaskHistory
-from aios.llm import LLMProvider, Message
+from aios.core import Core
 from aios.ollama import OllamaError, OllamaProvider
-from aios.policy import PolicyDecision, PolicyEngine
-from aios.process_list import ProcessListTool
-from aios.system_disk import SystemDiskTool
-from aios.system_info import SystemInfoTool
-from aios.system_memory import SystemMemoryTool
-from aios.system_prompt import SYSTEM_PROMPT
-from aios.systemd_list import SystemdListTool
-from aios.systemd_restart import SystemdRestartTool
-from aios.systemd_status import SystemdStatusTool
-from aios.tool_calls import ToolCallError, parse_tool_call
-from aios.tools import ToolRegistry, ToolResult
-
-
-MAX_TOOL_CALLS_PER_REQUEST = 5
-DIAGNOSTIC_CALLS = (
-    ("system.info", {}),
-    ("system.memory", {}),
-    ("system.disk", {"path": "/"}),
-    ("process.list", {"limit": 20}),
-    ("systemd.list", {"limit": 20}),
-)
+from aios.policy import PolicyDecision
 
 
 def authorize_tool_call(
-    policy: PolicyEngine, tool_name: str, arguments: dict[str, object],
+    decision: PolicyDecision, tool_name: str, arguments: dict[str, object],
 ) -> bool:
-    """Apply a policy decision in the terminal, without executing the tool."""
-    decision = policy.evaluate(tool_name)
+    """Present a Core policy decision and collect explicit terminal consent."""
     if decision is PolicyDecision.ALLOW:
         return True
     if decision is not PolicyDecision.CONFIRM:
@@ -75,83 +52,8 @@ def authorize_tool_call(
     return accepted
 
 
-def _build_tool_registry() -> ToolRegistry:
-    registry = ToolRegistry()
-    for tool in (
-        SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
-        SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
-    ):
-        registry.register(tool)
-    return registry
-
-
-def _tool_feedback(
-    reply: str, registry: ToolRegistry, policy: PolicyEngine,
-    history: TaskHistory, task_id: int,
-) -> Message | None:
-    try:
-        call = parse_tool_call(reply)
-    except ToolCallError:
-        if not reply.lstrip().startswith(("{", "[")):
-            return None
-        call_id = history.start_tool(task_id, None, None)
-        result = ToolResult(success=False, error="Invalid tool call")
-        return _result_feedback(None, result, history, call_id)
-    else:
-        return _execute_tool_feedback(
-            call.tool, call.arguments, registry,
-            lambda arguments: authorize_tool_call(policy, call.tool, arguments),
-            history, task_id,
-        )
-
-
-def _execute_tool_feedback(
-    name: str, arguments: dict[str, object], registry: ToolRegistry,
-    authorize: Callable[[dict[str, object]], bool], history: TaskHistory, task_id: int,
-) -> Message:
-    call_id = history.start_tool(task_id, name, arguments)
-    try:
-        result = registry.execute(name, arguments, authorize=authorize)
-    except (KeyboardInterrupt, SystemExit):
-        history.finish_tool(call_id, None)
-        raise
-    except Exception:
-        history.finish_tool(call_id, ToolResult(success=False, error="Tool execution failed"))
-        raise
-    return _result_feedback(name, result, history, call_id)
-
-
-def _result_feedback(
-    name: str | None, result: ToolResult, history: TaskHistory, call_id: int,
-) -> Message:
-    try:
-        content = json.dumps(
-            {"tool_result": {"tool": name, **asdict(result)}}, allow_nan=False,
-        )
-    except Exception:
-        result = ToolResult(success=False, error="Invalid tool result")
-        content = json.dumps({"tool_result": {"tool": name, **asdict(result)}})
-    history.finish_tool(call_id, result)
-    # Keep the existing text-chat contract; this is application-generated data.
-    return {"role": "user", "content": content}
-
-
-def _diagnostic_feedback(
-    registry: ToolRegistry, policy: PolicyEngine, history: TaskHistory, task_id: int,
-) -> list[Message]:
-    """Collect the fixed READ checks; CONFIRM and DENY never prompt or execute."""
-    feedback = []
-    for name, arguments in DIAGNOSTIC_CALLS:
-        feedback.append(_execute_tool_feedback(
-            name, arguments, registry,
-            lambda _, name=name: policy.evaluate(name) is PolicyDecision.ALLOW,
-            history, task_id,
-        ))
-    return feedback
-
-
-def _show_history(history: TaskHistory) -> None:
-    tasks = history.recent()
+def _show_history(core: Core) -> None:
+    tasks = core.recent_history()
     if not tasks:
         print("Historique vide.")
         return
@@ -164,12 +66,9 @@ def _show_history(history: TaskHistory) -> None:
             print("  Outil : " + json.dumps(call, ensure_ascii=True, allow_nan=False))
 
 
-def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
+def _run_shell(core: Core) -> None:
     print("Simple-AIOS")
-    messages: list[Message] = [{"role": "system", "content": SYSTEM_PROMPT}]
     logger = logging.getLogger("aios")
-    registry = _build_tool_registry()
-    policy = PolicyEngine(registry)
 
     while True:
         try:
@@ -194,44 +93,13 @@ def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
         elif command == "/version":
             print(f"Simple-AIOS {version('simple-aios')}")
         elif command == "/history":
-            _show_history(history)
+            _show_history(core)
         elif command.startswith("/") and command != "/diagnose":
             print("Commande inconnue. Tapez /help pour afficher l'aide.")
         else:
-            task_id = history.start(command)
-            pending: list[Message] = [*messages, {"role": "user", "content": command}]
             try:
-                remaining_calls = MAX_TOOL_CALLS_PER_REQUEST
-                if command == "/diagnose":
-                    pending = [*pending, *_diagnostic_feedback(registry, policy, history, task_id)]
-                    # Keep all observations if the summary fails; no automatic retry.
-                    messages = pending
-                    # The five checks have already consumed the budget: summary only.
-                    remaining_calls = 0
-                reply = provider.chat(pending)
-                for _ in range(remaining_calls):
-                    feedback = _tool_feedback(reply, registry, policy, history, task_id)
-                    if feedback is None:
-                        break
-                    pending = [*pending, {"role": "assistant", "content": reply}, feedback]
-                    # Preserve the outcome even if the follow-up response fails.
-                    messages = pending
-                    reply = provider.chat(pending)
-                else:
-                    # Inspect only: no call may execute after the budget is consumed.
-                    if reply.lstrip().startswith(("{", "[")):
-                        if command == "/diagnose":
-                            reply = (
-                                "Diagnostic terminé sans synthèse : "
-                                "aucun appel d'outil supplémentaire autorisé."
-                            )
-                        else:
-                            reply = (
-                                f"Limite de {MAX_TOOL_CALLS_PER_REQUEST} appels d'outils "
-                                "atteinte pour cette requête."
-                            )
+                reply = core.diagnose() if command == "/diagnose" else core.chat(command)
             except OllamaError as error:
-                history.finish(task_id, "failed")
                 logger.error("Provider error (%s)", type(error).__name__)
                 print(
                     "Impossible d'obtenir une réponse du LLM. "
@@ -239,14 +107,6 @@ def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
                     file=sys.stderr,
                 )
                 continue
-            except (KeyboardInterrupt, SystemExit):
-                history.finish(task_id, "interrupted")
-                raise
-            except Exception:
-                history.finish(task_id, "failed")
-                raise
-            history.finish(task_id, "completed")
-            messages = [*pending, {"role": "assistant", "content": reply}]
             print(reply)
 
 
@@ -269,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             print('Provider LLM non pris en charge. Utilisez provider = "ollama".', file=sys.stderr)
             return 1
         with closing(TaskHistory(config.data_dir)) as history:
-            _run_shell(OllamaProvider(config), history)
+            _run_shell(Core(OllamaProvider(config), history, permission_handler=authorize_tool_call))
     except KeyboardInterrupt:
         print()
     except Exception as error:

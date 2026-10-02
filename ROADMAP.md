@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 8.3 terminée. Aucune étape en cours ; prochaine étape : 9.1,
+État : étape 9.1 terminée. Aucune étape en cours ; prochaine étape : 9.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -210,6 +210,17 @@ contexte conversationnel testées. Statuts incomplets, valeurs nulles, masquage,
 sans détails sensibles vérifiés. Le test du CLI installé couvre `/history`
 sans serveur Ollama. Aucune dépendance ajoutée ni étape suivante commencée.
 
+Validation de l'étape 9.1 sous Python 3.12 : installation éditable réussie,
+`python -m pytest -q` : 705 tests réussis, dont 21 nouveaux pour le Core sans
+terminal. Conversation, contexte, diagnostic, policy, boucle d'outils et
+historique extraits dans `aios.core.Core`. Le CLI conserve saisie, affichage,
+commandes locales, confirmation et gestion des ressources. Sessions séparées,
+refus par défaut sans gestionnaire de confirmation, accord strict et impossibilité
+de contourner DENY vérifiés. Limite de cinq appels, diagnostic READ, résultats
+conservés après erreur du provider et statuts d'interruption testés sans LLM
+ni action système réelle. Les tests CLI existants passent après adaptation.
+Aucune dépendance ajoutée, aucun daemon ni socket implémenté.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -267,7 +278,7 @@ sans serveur Ollama. Aucune dépendance ajoutée ni étape suivante commencée.
 
 Commencer uniquement lorsque les phases précédentes fonctionnent.
 
-- [todo] 9.1 — Séparer le Core du terminal.
+- [done] 9.1 — Séparer le Core du terminal.
 - [todo] 9.2 — Daemon local `aiosd`, communication par Unix socket.
 - [todo] 9.3 — Connecter le CLI au daemon.
 - [todo] 9.4 — Unité systemd `simple-aios.service`.

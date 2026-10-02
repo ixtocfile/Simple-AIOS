@@ -47,7 +47,7 @@ def test_only_explicit_yes_authorizes_the_presented_action(confirmation, answer,
     arguments = {"target": "demo", "options": {"mode": "safe"}}
     original = deepcopy(arguments)
 
-    assert authorize_tool_call(policy, tool.name, arguments) is True
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, arguments) is True
 
     captured = capsys.readouterr()
     preview = captured.out.removeprefix("Action à confirmer : ").strip()
@@ -66,7 +66,7 @@ def test_empty_negative_or_ambiguous_answer_is_refused(confirmation, answer, cap
     policy, tool, reader = confirmation
     reader.return_value = answer
 
-    assert authorize_tool_call(policy, tool.name, {}) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {}) is False
 
     assert capsys.readouterr().out.endswith("Action refusée.\n")
     reader.assert_called_once()
@@ -80,7 +80,7 @@ def test_interrupted_or_unreadable_confirmation_is_refused(confirmation, error, 
     policy, tool, reader = confirmation
     reader.side_effect = error
 
-    assert authorize_tool_call(policy, tool.name, {}) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {}) is False
 
     captured = capsys.readouterr()
     assert captured.out.endswith("Action refusée.\n")
@@ -93,7 +93,7 @@ def test_non_interactive_input_cannot_grant_confirmation(confirmation, monkeypat
     reader.return_value = "oui"
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
 
-    assert authorize_tool_call(policy, tool.name, {"target": "private-target"}) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {"target": "private-target"}) is False
 
     reader.assert_not_called()
     captured = capsys.readouterr()
@@ -110,7 +110,7 @@ def test_policy_allow_and_deny_do_not_prompt(confirmation, risk_level, expected)
     tool.risk_level = risk_level
     reader.return_value = "oui"
 
-    assert authorize_tool_call(policy, tool.name, {}) is expected
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {}) is expected
     reader.assert_not_called()
 
 
@@ -118,7 +118,7 @@ def test_unknown_tool_cannot_be_confirmed(confirmation):
     policy, _, reader = confirmation
     reader.return_value = "oui"
 
-    assert authorize_tool_call(policy, "test.unknown", {}) is False
+    assert authorize_tool_call(policy.evaluate("test.unknown"), "test.unknown", {}) is False
     reader.assert_not_called()
 
 
@@ -127,7 +127,7 @@ def test_unexpected_policy_decision_is_refused(confirmation, monkeypatch, decisi
     policy, tool, reader = confirmation
     monkeypatch.setattr(policy, "evaluate", lambda _: decision)
 
-    assert authorize_tool_call(policy, tool.name, {}) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {}) is False
     reader.assert_not_called()
 
 
@@ -135,13 +135,13 @@ def test_consent_is_never_reused_and_policy_is_rechecked(confirmation):
     policy, tool, reader = confirmation
     reader.side_effect = ["oui", ""]
 
-    assert authorize_tool_call(policy, tool.name, {"target": "first"}) is True
-    assert authorize_tool_call(policy, tool.name, {"target": "second"}) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {"target": "first"}) is True
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {"target": "second"}) is False
     assert reader.call_count == 2
     assert policy.evaluate(tool.name) is PolicyDecision.CONFIRM
 
     tool.risk_level = RiskLevel.DENY
-    assert authorize_tool_call(policy, tool.name, {"target": "first"}) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, {"target": "first"}) is False
     assert reader.call_count == 2
 
 
@@ -150,7 +150,7 @@ def test_preview_escapes_terminal_controls_without_logging_arguments(confirmatio
     arguments = {"target": "secret-target\n\x1b[2J\r\u202e", "confirmed": True}
     reader.return_value = ""
 
-    assert authorize_tool_call(policy, tool.name, arguments) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, arguments) is False
 
     captured = capsys.readouterr()
     preview = captured.out.splitlines()[0].removeprefix("Action à confirmer : ")
@@ -167,7 +167,7 @@ def test_preview_escapes_terminal_controls_without_logging_arguments(confirmatio
 def test_unrepresentable_action_is_refused_without_prompt(confirmation, arguments, capsys):
     policy, tool, reader = confirmation
 
-    assert authorize_tool_call(policy, tool.name, arguments) is False
+    assert authorize_tool_call(policy.evaluate(tool.name), tool.name, arguments) is False
 
     reader.assert_not_called()
     captured = capsys.readouterr()

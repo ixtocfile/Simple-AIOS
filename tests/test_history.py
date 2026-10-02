@@ -7,7 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.__main__ import DIAGNOSTIC_CALLS, _build_tool_registry, main
+from aios.__main__ import main
+from aios.core import DIAGNOSTIC_CALLS, build_tool_registry
 from aios.config import Config
 from aios.history import REDACTED_TASK, TaskHistory
 from aios.llm import FakeLLMProvider
@@ -175,12 +176,12 @@ def test_exit_at_prompt_does_not_create_a_task(history_cli, tmp_path, ending):
 def test_tool_requests_keep_one_parent_task_and_its_processing_status(
     history_cli, tmp_path, monkeypatch, risk, provider_failure,
 ):
-    registry = _build_tool_registry()
+    registry = build_tool_registry()
     tool = registry.get("system.info")
     monkeypatch.setattr(tool, "risk_level", risk)
     execute = Mock(return_value=ToolResult(success=True, data={"hostname": "private-host"}))
     monkeypatch.setattr(tool, "_execute", execute)
-    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    monkeypatch.setattr("aios.core.build_tool_registry", lambda: registry)
     call = '{"tool":"system.info","arguments":{}}'
     provider = FakeLLMProvider([call, "Résultat reçu"])
     chat = provider.chat
@@ -204,7 +205,7 @@ def test_tool_requests_keep_one_parent_task_and_its_processing_status(
 
 
 def test_diagnostic_is_one_task_committed_before_readings(history_cli, tmp_path, monkeypatch):
-    registry = _build_tool_registry()
+    registry = build_tool_registry()
     observations = []
 
     def execute(_arguments):
@@ -213,7 +214,7 @@ def test_diagnostic_is_one_task_committed_before_readings(history_cli, tmp_path,
 
     for name, _ in DIAGNOSTIC_CALLS:
         monkeypatch.setattr(registry.get(name), "_execute", execute)
-    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    monkeypatch.setattr("aios.core.build_tool_registry", lambda: registry)
     provider = FakeLLMProvider(["Domaines non évalués"])
     assert history_cli(provider, ["/diagnose", "/exit"]) == 0
     assert len(observations) == 5
@@ -225,9 +226,9 @@ def test_diagnostic_is_one_task_committed_before_readings(history_cli, tmp_path,
 def test_budget_exhaustion_completes_the_request_without_extra_history_rows(
     history_cli, tmp_path, monkeypatch,
 ):
-    registry = _build_tool_registry()
+    registry = build_tool_registry()
     monkeypatch.setattr(registry.get("system.info"), "risk_level", RiskLevel.DENY)
-    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    monkeypatch.setattr("aios.core.build_tool_registry", lambda: registry)
     provider = FakeLLMProvider(['{"tool":"system.info","arguments":{}}'] * 6)
     assert history_cli(provider, ["Demande bornée", "/exit"]) == 0
     assert len(provider.calls) == 6

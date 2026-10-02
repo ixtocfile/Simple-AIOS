@@ -9,7 +9,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.__main__ import DIAGNOSTIC_CALLS, _build_tool_registry, main
+from aios.__main__ import main
+from aios.core import DIAGNOSTIC_CALLS, build_tool_registry
 from aios.config import Config
 from aios.history import REDACTED_TASK, TaskHistory
 from aios.llm import FakeLLMProvider
@@ -123,13 +124,13 @@ def test_sensitive_tool_names_strings_and_errors_are_masked_before_storage(tmp_p
 
 @pytest.fixture
 def tool_session(tmp_path, monkeypatch):
-    registry = _build_tool_registry()
+    registry = build_tool_registry()
     executions = {}
     for tool in registry.list_tools():
         execute = Mock(return_value=ToolResult(success=True, data={"observed": tool.name}))
         monkeypatch.setattr(tool, "_execute", execute)
         executions[tool.name] = execute
-    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    monkeypatch.setattr("aios.core.build_tool_registry", lambda: registry)
     monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(data_dir=tmp_path))
 
     def run(provider, entries):

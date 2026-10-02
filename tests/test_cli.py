@@ -10,7 +10,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.__main__ import _build_tool_registry, main
+from aios.__main__ import main
+from aios.core import build_tool_registry
 from aios.config import Config
 from aios.llm import FakeLLMProvider
 from aios.ollama import OllamaError
@@ -401,7 +402,7 @@ def cli_tool(monkeypatch):
     tool = RecordingTool()
     registry = ToolRegistry()
     registry.register(tool)
-    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    monkeypatch.setattr("aios.core.build_tool_registry", lambda: registry)
     return tool
 
 
@@ -410,7 +411,7 @@ def tool_reply(arguments=None):
 
 
 def test_default_cli_registry_contains_six_read_tools_and_restart_with_confirmation():
-    tools = _build_tool_registry().list_tools()
+    tools = build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
         "systemd.status", "systemd.list", "systemd.restart",

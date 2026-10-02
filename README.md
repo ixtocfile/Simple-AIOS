@@ -66,6 +66,35 @@ Une réponse contenant un appel JSON strict passe par le circuit d'exécution
 décrit ci-dessous. Les autres réponses sont affichées comme texte ; les
 commandes shell proposées par le modèle ne sont jamais exécutées.
 
+## Core et terminal
+
+`aios.core.Core(provider, history, *, registry=None, permission_handler=None)`
+porte une session synchrone indépendante du terminal. Il conserve le contexte,
+valide les appels, applique la policy et la limite de cinq tentatives, exécute
+les outils autorisés et enregistre tâches et résultats dans l'historique.
+Par défaut, `build_tool_registry()` fournit les sept outils existants.
+
+- `chat(text)` traite un message non vide et renvoie la réponse textuelle.
+- `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
+- `recent_history()` renvoie les dernières tâches et leurs outils sans écrire
+  ni modifier le contexte de conversation.
+
+Le Core ne lit aucune entrée, n'affiche rien et ne configure pas les logs.
+Le CLI conserve la configuration, les commandes locales, l'affichage et la
+confirmation interactive. L'appelant fournit le provider et `TaskHistory`,
+et reste responsable de leur durée de vie ; le CLI ferme la base à sa sortie.
+Chaque instance de Core possède son propre contexte. Les erreurs et
+interruptions se propagent à l'appelant après la tentative d'enregistrement
+du statut, sans relance automatique.
+
+Le gestionnaire facultatif `permission_handler(decision, name, arguments)`
+reçoit une décision calculée par le Core et une copie des arguments validés.
+`ALLOW` ne le sollicite pas. Pour `CONFIRM`, seul le booléen `True` autorise
+l'action ; sans gestionnaire, elle est refusée. Le gestionnaire peut présenter
+un refus `DENY`, mais ne peut pas l'annuler. Le diagnostic reste limité à READ.
+Les tests utilisent directement le Core avec `FakeLLMProvider`, des outils
+simulés et les opérations de terminal interdites.
+
 ## Historique des tâches
 
 Le CLI utilise `sqlite3`, fourni par Python, pour créer ou ouvrir
@@ -86,7 +115,7 @@ immédiatement dans SQLite, puis seul son statut est mis à jour :
 | `failed` | Erreur du provider ou erreur inattendue pendant le traitement. |
 | `interrupted` | Interruption pendant le traitement, notamment Ctrl+C. |
 
-`completed` décrit la fin du traitement par le CLI, pas la réussite de toutes
+`completed` décrit la fin du traitement par le Core, pas la réussite de toutes
 les actions demandées ni l'exactitude du texte du modèle. Une réponse expliquant
 un refus, une erreur d'outil, un diagnostic partiel ou la limite de cinq appels
 termine aussi le traitement. Un diagnostic entier ou plusieurs appels d'outils
@@ -157,7 +186,7 @@ une issue inconnue ; aucune reprise ni réexécution automatique n'est effectué
 Un échec de l'insertion initiale empêche le traitement de cet appel. Comme pour
 les tâches, une erreur de stockage termine le CLI proprement avec le code 1,
 sans enregistrer le détail de l'exception dans les logs. Les appels Python
-directs aux outils restent indépendants de cette persistance gérée par le CLI.
+directs aux outils restent indépendants de cette persistance gérée par le Core.
 
 ## Consulter l'historique
 
@@ -229,7 +258,7 @@ retrouvent leur budget habituel et leurs contrôles de permissions.
 ## Prompt système
 
 `aios.system_prompt.SYSTEM_PROMPT` définit les consignes fixes de Simple-AIOS.
-Le CLI initialise chaque session avec ce texte dans un message de rôle `system`,
+Le Core initialise chaque session avec ce texte dans un message de rôle `system`,
 placé avant la première demande utilisateur. Ce message est conservé une seule
 fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
@@ -257,7 +286,7 @@ Les tests utilisent FakeLLMProvider et un transport Ollama simulé pour vérifie
 les messages transmis, sans évaluer le comportement d'un LLM réel.
 Le prompt décrit aussi la synthèse attendue après les lectures de `/diagnose` ;
 la collecte et l'interdiction de nouveaux appels durant cette synthèse sont
-imposées par le CLI.
+imposées par le Core.
 
 ## Configuration
 
@@ -403,7 +432,7 @@ défaut ; la modifier ne change pas les arguments exécutés.
 
 Les appels Python de confiance peuvent généralement omettre ce paramètre.
 `systemd.restart` exige toutefois une fonction d'autorisation, même hors du CLI ;
-son absence produit `Tool execution denied`. Le CLI fournit systématiquement
+son absence produit `Tool execution denied`. Le Core fournit systématiquement
 cette fonction pour appliquer le Policy Engine et la confirmation utilisateur
 à chaque appel du modèle. Le registre lui-même reste indépendant du CLI.
 
@@ -464,13 +493,13 @@ Le moteur produit uniquement une décision : il n'exécute aucun outil, ne valid
 pas leurs arguments, ne sollicite pas le LLM et ne recueille aucune confirmation.
 `CONFIRM` indique qu'un accord explicite reste nécessaire ; cette décision ne
 vaut pas accord. Le composant de confirmation CLI est décrit ci-dessous.
-La conversation CLI relie validation des arguments, décision de policy,
+Le Core relie validation des arguments, décision de policy,
 éventuelle confirmation et exécution, avant de transmettre le résultat au modèle.
 
 ## Confirmation dans le CLI
 
-`aios.__main__.authorize_tool_call(policy, tool_name, arguments)` traduit une
-décision du Policy Engine en un booléen pour l'appel présenté :
+`aios.__main__.authorize_tool_call(decision, tool_name, arguments)` présente la
+décision déjà calculée par le Core et renvoie un booléen pour l'appel présenté :
 
 | Décision | Comportement |
 | --- | --- |
@@ -500,7 +529,7 @@ si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autr
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
 action. Les six outils de lecture sont classés `READ` et `systemd.restart`
-exige une confirmation. Le CLI appelle ce composant avec les
+exige une confirmation. Le Core appelle ce composant fourni par le CLI avec les
 arguments déjà validés et normalisés, juste avant l'exécution de l'outil.
 
 ## Format JSON des appels d'outils
@@ -547,11 +576,11 @@ Ce parseur valide le format de l'appel. Il ne recherche pas l'outil dans le
 registre et ne valide pas ses arguments spécifiques : un nom inconnu ou des
 arguments inadaptés à un outil peuvent donc passer cette validation de format.
 Il n'accorde aucune autorisation, ne demande aucune confirmation et n'exécute
-rien. Le CLI enchaîne les vérifications décrites ci-dessous.
+rien. Le Core enchaîne les vérifications décrites ci-dessous.
 
 ## Exécution d'un appel dans la conversation
 
-Le CLI enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
+Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
 ainsi que `systemd.status`, `systemd.list` et `systemd.restart` au début de chaque
 session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
 valide, il suit cet ordre :
@@ -756,7 +785,7 @@ Il reste indépendant du CLI et du LLM.
 
 `aios.systemd_status.SystemdStatusTool` consulte l'état d'un service du
 gestionnaire systemd système local. Il est classé `READ` et enregistré dans
-le CLI, avec validation et policy avant chaque consultation.
+le Core, avec validation et policy avant chaque consultation.
 
 Son seul argument, obligatoire, est `service` : un nom complet avec le suffixe
 `.service`, limité à 255 caractères ASCII. Le nom commence par une lettre ou

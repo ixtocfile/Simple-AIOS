@@ -5,7 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from aios.__main__ import DIAGNOSTIC_CALLS, MAX_TOOL_CALLS_PER_REQUEST, _build_tool_registry, main
+from aios.__main__ import main
+from aios.core import DIAGNOSTIC_CALLS, MAX_TOOL_CALLS_PER_REQUEST, build_tool_registry
 from aios.config import Config
 from aios.llm import FakeLLMProvider
 from aios.ollama import OllamaError
@@ -32,13 +33,13 @@ READINGS = {
 
 @pytest.fixture
 def diagnostic(tmp_path, monkeypatch):
-    registry = _build_tool_registry()
+    registry = build_tool_registry()
     executions = {}
     for tool in registry.list_tools():
         execution = Mock(return_value=ToolResult(success=True, data=READINGS.get(tool.name, {})))
         monkeypatch.setattr(tool, "_execute", execution)
         executions[tool.name] = execution
-    monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: registry)
+    monkeypatch.setattr("aios.core.build_tool_registry", lambda: registry)
     monkeypatch.setattr("aios.__main__.load_config", lambda _: Config(data_dir=tmp_path))
 
     def run(provider, entries):
@@ -150,7 +151,7 @@ def test_one_failed_check_does_not_block_remaining_readings_or_leak_details(
         for tool in registry.list_tools():
             if tool.name != "system.memory":
                 reduced.register(tool)
-        monkeypatch.setattr("aios.__main__._build_tool_registry", lambda: reduced)
+        monkeypatch.setattr("aios.core.build_tool_registry", lambda: reduced)
     elif failure == "validation":
         monkeypatch.setattr(registry.get("system.memory"), "validate_arguments", Mock(side_effect=ValueError("private detail")))
     elif failure == "policy":
@@ -203,7 +204,7 @@ def test_model_cannot_run_any_additional_tool_during_the_diagnostic(
 ):
     _, executions, run = diagnostic
     dispatch = Mock(side_effect=AssertionError("No dispatch allowed during diagnostic summary"))
-    monkeypatch.setattr("aios.__main__._tool_feedback", dispatch)
+    monkeypatch.setattr("aios.core.Core._tool_feedback", dispatch)
     provider = FakeLLMProvider([reply, "Disponible"])
 
     run(provider, ["/diagnose", "/exit"])

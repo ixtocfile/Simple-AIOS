@@ -3,13 +3,13 @@
 import re
 from unittest.mock import Mock
 
-from aios.__main__ import MAX_TOOL_CALLS_PER_REQUEST, _build_tool_registry
+from aios.core import MAX_TOOL_CALLS_PER_REQUEST, build_tool_registry
 from aios.system_prompt import SYSTEM_PROMPT
 from aios.tool_calls import parse_tool_call
 
 
 def test_catalogue_matches_registered_names_and_risks_and_has_valid_examples(monkeypatch):
-    registry = _build_tool_registry()
+    registry = build_tool_registry()
     declarations = re.findall(r"^- ([\w.]+) \[(READ|CONFIRM|DENY)\]", SYSTEM_PROMPT, re.MULTILINE)
     assert declarations == [(tool.name, tool.risk_level.name) for tool in registry.list_tools()]
     examples = [parse_tool_call(line) for line in SYSTEM_PROMPT.splitlines() if line.startswith("{")]
