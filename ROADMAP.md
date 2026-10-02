@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 8.2 terminée. Aucune étape en cours ; prochaine étape : 8.3,
+État : étape 8.3 terminée. Aucune étape en cours ; prochaine étape : 9.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -199,6 +199,17 @@ limite de cinq tentatives, conservation après erreur du provider et arrêt sans
 réexécution en cas d'échec de stockage vérifiés. Aucune dépendance ajoutée,
 aucun service réel redémarré et aucune commande `/history` implémentée.
 
+Validation de l'étape 8.3 sous Python 3.12 : `python -m pytest -q` : 684 tests
+réussis, dont 12 nouveaux pour `/history`. Consultation locale sans argument,
+historique vide, 20 dernières tâches et appels associés dans leur ordre,
+persistance entre sessions et rafraîchissement après une demande vérifiés.
+Lecture seule avec écritures SQLite interdites pendant le test, absence de
+nouvelle tâche, d'appel au provider, d'exécution ou de réinjection dans le
+contexte conversationnel testées. Statuts incomplets, valeurs nulles, masquage,
+échappement des caractères de contrôle, arguments refusés et erreurs de lecture
+sans détails sensibles vérifiés. Le test du CLI installé couvre `/history`
+sans serveur Ollama. Aucune dépendance ajoutée ni étape suivante commencée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -250,7 +261,7 @@ aucun service réel redémarré et aucune commande `/history` implémentée.
 
 - [done] 8.1 — Historique SQLite : tâche, timestamp et statut.
 - [done] 8.2 — Historique des outils : arguments non sensibles, résultat et statut.
-- [todo] 8.3 — Commande `/history`.
+- [done] 8.3 — Commande `/history`.
 
 ## Phase 9 — Daemon
 

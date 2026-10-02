@@ -1,5 +1,6 @@
 """Persist task and tool lifecycles using the standard-library SQLite driver."""
 
+from contextlib import closing
 from dataclasses import asdict
 from datetime import UTC, datetime
 import json
@@ -22,6 +23,7 @@ _SENSITIVE_TASK = re.compile(
     re.IGNORECASE,
 )
 REDACTED_TASK = "[contenu sensible masqué]"
+HISTORY_LIMIT = 20
 
 
 def _safe_json(value: object) -> str:
@@ -154,6 +156,32 @@ class TaskHistory:
             )
             if cursor.rowcount != 1:
                 raise ValueError("Unknown or already finished tool call")
+
+    def recent(self) -> list[dict[str, object]]:
+        """Read the latest tasks and their tool attempts, without changing them."""
+        with closing(self._connection.cursor()) as cursor:
+            cursor.row_factory = sqlite3.Row
+            rows = cursor.execute(
+                "SELECT id, task, timestamp, status FROM tasks ORDER BY id DESC LIMIT ?",
+                (HISTORY_LIMIT,),
+            ).fetchall()
+            tasks = []
+            for row in rows:
+                task = dict(row)
+                calls = cursor.execute(
+                    "SELECT id, tool, arguments, timestamp, result, status FROM tool_calls "
+                    "WHERE task_id = ? ORDER BY id",
+                    (task["id"],),
+                ).fetchall()
+                task["tools"] = []
+                for call_row in calls:
+                    call = dict(call_row)
+                    for field in ("arguments", "result"):
+                        if call[field] is not None:
+                            call[field] = json.loads(call[field])
+                    task["tools"].append(call)
+                tasks.append(task)
+        return tasks
 
     def close(self) -> None:
         self._connection.close()

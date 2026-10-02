@@ -34,11 +34,12 @@ Commandes disponibles :
 - `/help` : afficher l'aide.
 - `/version` : afficher la version du package.
 - `/diagnose` : diagnostic général en lecture seule, avec synthèse par le modèle.
+- `/history` : consulter les 20 dernières tâches et leurs appels d'outils.
 - `/exit` : quitter.
 
 Une entrée vide affiche une nouvelle invite. Une commande inconnue commençant
-par `/` affiche un message d'aide et laisse le shell ouvert. `/help`, `/version`
-et `/exit` restent locales et ne sont pas envoyées au modèle. Ctrl+D (fin d'entrée) ou
+par `/` affiche un message d'aide et laisse le shell ouvert. `/help`, `/version`,
+`/history` et `/exit` restent locales et ne sont pas envoyées au modèle. Ctrl+D (fin d'entrée) ou
 Ctrl+C ferment proprement le shell ; Ctrl+C fonctionne aussi pendant un appel
 au provider.
 
@@ -71,8 +72,8 @@ Le CLI utilise `sqlite3`, fourni par Python, pour créer ou ouvrir
 `<data_dir>/history.sqlite3`. Par défaut :
 `~/.local/share/simple-aios/history.sqlite3`. Chaque demande conversationnelle
 et chaque `/diagnose` crée une ligne dans la table `tasks` avant tout appel au
-provider ou aux outils. Les entrées vides, commandes inconnues, `/help`, `/version`
-et `/exit` ne créent aucune tâche.
+provider ou aux outils. Les entrées vides, commandes inconnues, `/help`, `/version`,
+`/history` et `/exit` ne créent aucune tâche.
 
 La table contient `id` (identifiant entier), `task` (demande sans espaces autour),
 `timestamp` (début en UTC au format ISO 8601) et `status`. La ligne est validée
@@ -158,7 +159,29 @@ les tâches, une erreur de stockage termine le CLI proprement avec le code 1,
 sans enregistrer le détail de l'exception dans les logs. Les appels Python
 directs aux outils restent indépendants de cette persistance gérée par le CLI.
 
-La commande de consultation `/history` reste prévue à l'étape 8.3.
+## Consulter l'historique
+
+Saisissez `/history` sans argument dans le CLI. La commande consulte la base
+du `data_dir` configuré, y compris les sessions précédentes. Elle affiche les
+20 dernières tâches, par identifiant décroissant, avec leurs appels d'outils
+par identifiant croissant sous chaque tâche. Chaque consultation relit la base.
+Si aucune tâche n'est enregistrée, elle affiche `Historique vide.`.
+
+Une ligne `Tâche :` contient l'identifiant, la demande enregistrée, l'horodatage
+UTC et le statut. Les lignes `Outil :` associées contiennent l'identifiant de
+l'appel, le nom de l'outil, les arguments filtrés, l'horodatage, le résultat
+filtré et le statut. Ces lignes sont au format JSON ; les caractères Unicode
+et de contrôle sont échappés, pour qu'un texte enregistré ne puisse pas effacer
+le terminal ou imiter une nouvelle invite. Les valeurs nulles et les statuts
+`running` ou `interrupted` sont affichés tels qu'enregistrés, sans supposer une
+réussite. Les données déjà masquées restent masquées.
+
+La consultation est locale et en lecture seule : elle ne crée aucune tâche
+ni tentative d'outil, n'exécute aucun outil et ne sollicite pas Ollama. Elle
+n'ajoute pas les données consultées au contexte conversationnel. Leur contenu
+n'est pas écrit dans les logs applicatifs. Une erreur de lecture SQLite ou
+un JSON stocké invalide termine le CLI avec son message générique et le code 1,
+sans exposer le détail de l'exception ; les connexions sont fermées.
 
 ## Diagnostic général
 

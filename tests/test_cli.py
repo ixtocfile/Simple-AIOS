@@ -24,6 +24,7 @@ HELP = (
     "/help - Afficher l'aide\n"
     "/version - Afficher la version\n"
     "/diagnose - Diagnostic général en lecture seule\n"
+    "/history - Afficher les dernières tâches et leurs outils\n"
     "/exit - Quitter\n"
 )
 UNKNOWN = "Commande inconnue. Tapez /help pour afficher l'aide.\n"
@@ -48,6 +49,7 @@ SYSTEM_MESSAGE = {"role": "system", "content": SYSTEM_PROMPT}
             id="unknown-command-then-help",
         ),
         pytest.param("", "ai> \n", id="end-of-input"),
+        pytest.param("/history\n/exit\n", "ai> Historique vide.\nai> ", id="empty-history"),
     ],
 )
 def test_interactive_shell(tmp_path, commands, transcript):

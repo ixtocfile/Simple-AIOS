@@ -11,7 +11,7 @@ import sys
 
 from aios.app_logging import close_logging, configure_logging
 from aios.config import load_config
-from aios.history import TaskHistory
+from aios.history import HISTORY_LIMIT, TaskHistory
 from aios.llm import LLMProvider, Message
 from aios.ollama import OllamaError, OllamaProvider
 from aios.policy import PolicyDecision, PolicyEngine
@@ -150,6 +150,20 @@ def _diagnostic_feedback(
     return feedback
 
 
+def _show_history(history: TaskHistory) -> None:
+    tasks = history.recent()
+    if not tasks:
+        print("Historique vide.")
+        return
+    print(f"Historique ({HISTORY_LIMIT} dernières tâches, plus récentes d'abord) :")
+    for task in tasks:
+        # Escape all stored text, including terminal controls and Unicode bidi.
+        summary = {key: value for key, value in task.items() if key != "tools"}
+        print("Tâche : " + json.dumps(summary, ensure_ascii=True, allow_nan=False))
+        for call in task["tools"]:
+            print("  Outil : " + json.dumps(call, ensure_ascii=True, allow_nan=False))
+
+
 def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
     print("Simple-AIOS")
     messages: list[Message] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -174,10 +188,13 @@ def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
                 "/help - Afficher l'aide\n"
                 "/version - Afficher la version\n"
                 "/diagnose - Diagnostic général en lecture seule\n"
+                "/history - Afficher les dernières tâches et leurs outils\n"
                 "/exit - Quitter"
             )
         elif command == "/version":
             print(f"Simple-AIOS {version('simple-aios')}")
+        elif command == "/history":
+            _show_history(history)
         elif command.startswith("/") and command != "/diagnose":
             print("Commande inconnue. Tapez /help pour afficher l'aide.")
         else:
