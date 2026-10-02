@@ -5,7 +5,7 @@ ligne de commande. Linux reste responsable du système et du matériel.
 
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
 configuration, des logs applicatifs et un faux provider pour les tests.
-Les cinq outils de lecture système sont accessibles à la conversation après
+Les six outils de lecture système sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine.
 
 ## Développement
@@ -217,11 +217,12 @@ fournis à l'outil et des réponses du LLM :
 | `RiskLevel.CONFIRM` | Action nécessitant une confirmation explicite de l'utilisateur. |
 | `RiskLevel.DENY` | Action à refuser. |
 
-Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les cinq
+Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les six
 outils existants, `system.info`, `system.memory`, `system.disk`, `process.list`
-et `systemd.status`, déclarent `RiskLevel.READ`. Le registre valide le type du niveau à
-l'enregistrement : une simple chaîne comme `"READ"` est refusée. `get` et
-`list_tools` rendent ce niveau accessible sans exécuter l'outil.
+ainsi que `systemd.status` et `systemd.list`, déclarent `RiskLevel.READ`.
+Le registre valide le type du niveau à l'enregistrement : une simple chaîne
+comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
+sans exécuter l'outil.
 
 Le niveau de risque est une métadonnée utilisée par le Policy Engine pour
 produire une décision d'autorisation.
@@ -296,7 +297,7 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les cinq outils existants sont classés `READ` ; les tests de
+action. Les six outils existants sont classés `READ` ; les tests de
 confirmation utilisent des outils fictifs. Le CLI appelle ce composant avec les
 arguments déjà validés et normalisés, juste avant l'exécution de l'outil.
 
@@ -349,8 +350,8 @@ rien. Le CLI enchaîne les vérifications décrites ci-dessous.
 ## Exécution d'un appel dans la conversation
 
 Le CLI enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
-et `systemd.status` au début de chaque session, sans les exécuter. Lorsqu'une
-réponse du modèle est un appel JSON valide, il suit cet ordre :
+ainsi que `systemd.status` et `systemd.list` au début de chaque session, sans les
+exécuter. Lorsqu'une réponse du modèle est un appel JSON valide, il suit cet ordre :
 
 1. Rechercher l'outil enregistré et valider ses arguments spécifiques.
 2. Appliquer la décision du Policy Engine et demander la confirmation si nécessaire.
@@ -594,6 +595,44 @@ un timeout, un code de sortie non nul ou des propriétés invalides produisent
 partielles ni détails d'exception. Les erreurs ne déclenchent pas de commande
 de remplacement. L'outil utilise les droits du processus courant, sans `sudo`.
 
+## Outil systemd : systemd.list
+
+`aios.systemd_list.SystemdListTool` liste les unités `.service` connues du
+gestionnaire systemd système local, y compris celles inactives ou en échec.
+Il utilise
+[`systemctl list-units --type=service --all`](https://github.com/systemd/systemd/blob/main/man/systemctl.xml).
+Cette liste concerne les unités présentes en mémoire ; elle ne constitue pas
+un inventaire de tous les fichiers de services installés.
+
+L'argument optionnel `limit` vaut 20 par défaut et accepte un entier de 1 à 100,
+sans booléen. Tout autre argument est refusé avant de lancer un processus.
+L'outil est classé `READ` et disponible dans la conversation :
+
+```json
+{"tool":"systemd.list","arguments":{"limit":10}}
+```
+
+Le résultat contient `data["services"]`, une liste triée par nom, avec au plus
+`limit` entrées. Chaque entrée contient `service`, `load_state`, `active_state`
+et `sub_state`, comme le résultat de `systemd.status`. Les noms sont conservés
+tels que signalés par systemd, y compris les instances et les séquences échappées
+`\xHH`. Ces dernières restent hors du format d'entrée accepté par `systemd.status`.
+Le booléen `data["truncated"]` indique si d'autres services ont été omis à cause
+de la limite. Une liste vide est un succès, avec `truncated` à `false`.
+
+Chaque appel relit les données avec une commande fixe sans shell, sans pager
+ni demande de mot de passe et avec un timeout de cinq secondes. L'affichage
+est sans en-têtes, puces ou troncature des noms ; la locale est fixée à `C`,
+les couleurs et liens de terminal sont désactivés pour ce processus uniquement.
+Seules les quatre premières colonnes sont conservées ; les descriptions et
+éventuelles informations de jobs ne sont pas renvoyées au modèle ni journalisées.
+
+Toutes les lignes sont validées avant de limiter le résultat. Des lignes
+mal formées ou dupliquées, un binaire absent, un accès refusé, un timeout ou
+un code de sortie non nul produisent un échec générique `Tool execution failed`,
+sans liste partielle, détail d'exception, nouvelle tentative ou commande de
+remplacement. Les tests utilisent un `systemctl` simulé et FakeLLMProvider.
+
 ## Tests
 
 ```bash
@@ -602,8 +641,8 @@ python -m pytest -q
 
 Les tests fonctionnent sans LLM et simulent `systemctl`, sans exiger systemd.
 Le package n'a aucune dépendance Python d'exécution ; pytest est réservé aux
-tests. L'utilisation réelle de `systemd.status` nécessite `systemctl` dans le
-`PATH` et un gestionnaire systemd système local accessible.
+tests. L'utilisation réelle de `systemd.status` et `systemd.list` nécessite
+`systemctl` dans le `PATH` et un gestionnaire systemd système local accessible.
 
 Consulter [ROADMAP.md](ROADMAP.md) pour la progression et [AGENTS.md](AGENTS.md)
 pour les règles de contribution. Licence : [MIT](LICENSE).

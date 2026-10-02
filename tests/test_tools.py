@@ -9,6 +9,7 @@ from aios.process_list import ProcessListTool
 from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
+from aios.systemd_list import SystemdListTool
 from aios.systemd_status import SystemdStatusTool
 from aios.tools import RiskLevel, Tool, ToolRegistry, ToolResult
 
@@ -139,6 +140,7 @@ def test_registry_preserves_declared_risk_without_executing(risk_level):
 
 @pytest.mark.parametrize("tool_class", [
     SystemInfoTool, SystemMemoryTool, SystemDiskTool, ProcessListTool, SystemdStatusTool,
+    SystemdListTool,
 ])
 def test_existing_tools_declare_read_risk_without_execution(tool_class, monkeypatch):
     registry = ToolRegistry()

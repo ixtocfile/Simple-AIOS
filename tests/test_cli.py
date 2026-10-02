@@ -344,9 +344,49 @@ def test_default_cli_registry_contains_only_existing_read_tools():
     tools = _build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
-        "systemd.status",
+        "systemd.status", "systemd.list",
     ]
     assert all(tool.risk_level is RiskLevel.READ for tool in tools)
+
+
+@pytest.mark.parametrize("limit", [1, True])
+def test_cli_systemd_list_returns_bounded_results_after_argument_validation(
+    cli_session, monkeypatch, capsys, tmp_path, limit,
+):
+    run = Mock(return_value=subprocess.CompletedProcess(
+        ["systemctl"], 0, stdout=(
+            "zeta.service loaded inactive dead secret-description\n"
+            "private-list.service loaded active running secret-description\n"
+        ),
+    ))
+    monkeypatch.setattr("aios.systemd_list.subprocess.run", run)
+    reply = json.dumps({"tool": "systemd.list", "arguments": {"limit": limit}})
+    provider = FakeLLMProvider([reply, "Liste reçue"])
+
+    assert cli_session(provider, ["Liste les services", "/exit"]) == 0
+
+    assert len(provider.calls) == 2
+    result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
+    assert result["tool"] == "systemd.list"
+    if type(limit) is int:
+        assert result["success"] is True
+        assert result["data"] == {"services": [{
+            "service": "private-list.service", "load_state": "loaded",
+            "active_state": "active", "sub_state": "running",
+        }], "truncated": True}
+        assert result["error"] is None
+        assert run.call_count == 1
+    else:
+        assert result["success"] is False
+        assert result["data"] is None
+        assert result["error"] == "Invalid tool arguments"
+        run.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.out == "Simple-AIOS\nListe reçue\n"
+    assert captured.err == ""
+    logs = (tmp_path / "logs/simple-aios.log").read_text()
+    assert "private-list" not in logs
+    assert "secret-description" not in logs + captured.out + captured.err + repr(provider.calls)
 
 
 @pytest.mark.parametrize("service", ["private-status.service", "private-status.service;id"])

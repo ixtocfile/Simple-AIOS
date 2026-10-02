@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 6.1 terminée. Aucune étape en cours ; prochaine étape : 6.2,
+État : étape 6.2 terminée. Aucune étape en cours ; prochaine étape : 6.3,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -132,6 +132,16 @@ CLI vérifiés avec `systemctl` simulé et FakeLLMProvider. L'essai local sans
 systemd a confirmé l'échec structuré attendu ; aucun service réel n'a pu être
 interrogé dans cet environnement. Aucune étape suivante ajoutée.
 
+Validation de l'étape 6.2 sous Python 3.12 : `python -m pytest -q` : 511 tests
+réussis. `systemd.list` classé READ, commande fixe `systemctl list-units` sans
+shell, timeout, liste des services connus triée par nom et bornée avec indicateur
+de troncature vérifiés. Limite par défaut de 20, bornes de 1 à 100, liste vide,
+états et noms échappés, refus des arguments invalides, des lignes mal formées ou
+dupliquées, erreurs génériques et retour au modèle testés avec `systemctl` simulé
+et FakeLLMProvider. L'essai local sans systemd a confirmé l'échec structuré
+attendu ; aucune liste réelle n'a pu être interrogée ici. Aucune étape suivante
+ajoutée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -171,7 +181,7 @@ interrogé dans cet environnement. Aucune étape suivante ajoutée.
 ## Phase 6 — systemd
 
 - [done] 6.1 — `systemd.status` en lecture seule.
-- [todo] 6.2 — `systemd.list` en lecture seule.
+- [done] 6.2 — `systemd.list` en lecture seule.
 - [todo] 6.3 — `systemd.restart` avec confirmation et validation stricte du service.
 
 ## Phase 7 — Diagnostic
