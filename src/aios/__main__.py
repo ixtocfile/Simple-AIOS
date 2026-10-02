@@ -1,6 +1,7 @@
 """Entry point for ``python -m aios``."""
 
 import argparse
+from contextlib import closing
 from dataclasses import asdict
 from importlib.metadata import version
 import json
@@ -9,6 +10,7 @@ import sys
 
 from aios.app_logging import close_logging, configure_logging
 from aios.config import load_config
+from aios.history import TaskHistory
 from aios.llm import LLMProvider, Message
 from aios.ollama import OllamaError, OllamaProvider
 from aios.policy import PolicyDecision, PolicyEngine
@@ -124,7 +126,7 @@ def _diagnostic_feedback(registry: ToolRegistry, policy: PolicyEngine) -> list[M
     return feedback
 
 
-def _run_shell(provider: LLMProvider) -> None:
+def _run_shell(provider: LLMProvider, history: TaskHistory) -> None:
     print("Simple-AIOS")
     messages: list[Message] = [{"role": "system", "content": SYSTEM_PROMPT}]
     logger = logging.getLogger("aios")
@@ -155,6 +157,7 @@ def _run_shell(provider: LLMProvider) -> None:
         elif command.startswith("/") and command != "/diagnose":
             print("Commande inconnue. Tapez /help pour afficher l'aide.")
         else:
+            task_id = history.start(command)
             pending: list[Message] = [*messages, {"role": "user", "content": command}]
             try:
                 remaining_calls = MAX_TOOL_CALLS_PER_REQUEST
@@ -187,6 +190,7 @@ def _run_shell(provider: LLMProvider) -> None:
                                 "atteinte pour cette requête."
                             )
             except OllamaError as error:
+                history.finish(task_id, "failed")
                 logger.error("Provider error (%s)", type(error).__name__)
                 print(
                     "Impossible d'obtenir une réponse du LLM. "
@@ -194,6 +198,13 @@ def _run_shell(provider: LLMProvider) -> None:
                     file=sys.stderr,
                 )
                 continue
+            except (KeyboardInterrupt, SystemExit):
+                history.finish(task_id, "interrupted")
+                raise
+            except Exception:
+                history.finish(task_id, "failed")
+                raise
+            history.finish(task_id, "completed")
             messages = [*pending, {"role": "assistant", "content": reply}]
             print(reply)
 
@@ -216,7 +227,8 @@ def main(argv: list[str] | None = None) -> int:
             logger.error("Unsupported LLM provider")
             print('Provider LLM non pris en charge. Utilisez provider = "ollama".', file=sys.stderr)
             return 1
-        _run_shell(OllamaProvider(config))
+        with closing(TaskHistory(config.data_dir)) as history:
+            _run_shell(OllamaProvider(config), history)
     except KeyboardInterrupt:
         print()
     except Exception as error:

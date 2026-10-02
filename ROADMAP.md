@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 7.2 terminée. Aucune étape en cours ; prochaine étape : 8.1,
+État : étape 8.1 terminée. Aucune étape en cours ; prochaine étape : 8.2,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -174,6 +174,19 @@ system.memory, system.disk et process.list ; systemd.list a échoué proprement
 dans cet environnement sans systemd actif. Aucun redémarrage, aucune correction
 automatique ni étape suivante ajoutés.
 
+Validation de l'étape 8.1 sous Python 3.12 : `python -m pytest -q` : 641 tests
+réussis, dont 31 pour l'historique SQLite. Installation éditable effectuée avec
+les dépendances de construction déjà disponibles localement, sans ajout de
+dépendance au projet. Tâche, horodatage UTC et statut persistés avant et après
+traitement ; réouverture, requêtes SQL paramétrées, erreurs, interruptions et
+fermeture des connexions vérifiées avec de vrais fichiers SQLite et FakeLLMProvider.
+Commandes locales exclues, une ligne par demande ou diagnostic, conservation
+après erreur du provider et absence de reprise automatique testées. Marqueurs
+sensibles masqués avant écriture, réponses et détails d'outils non persistés,
+erreurs de stockage sans détails sensibles et arrêt avant traitement si
+l'insertion échoue vérifiés. Aucun historique détaillé d'outil ni `/history`
+ajouté ; aucune étape suivante commencée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -223,7 +236,7 @@ automatique ni étape suivante ajoutés.
 
 ## Phase 8 — Mémoire
 
-- [todo] 8.1 — Historique SQLite : tâche, timestamp et statut.
+- [done] 8.1 — Historique SQLite : tâche, timestamp et statut.
 - [todo] 8.2 — Historique des outils : arguments non sensibles, résultat et statut.
 - [todo] 8.3 — Commande `/history`.
 

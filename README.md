@@ -4,7 +4,8 @@ Prototype minimal d'une couche intelligente au-dessus de Linux, uniquement en
 ligne de commande. Linux reste responsable du système et du matériel.
 
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
-configuration, des logs applicatifs et un faux provider pour les tests.
+configuration, des logs applicatifs, un historique SQLite des tâches et un faux
+provider pour les tests.
 Les six outils de lecture système sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
 permet aussi de redémarrer un service après confirmation explicite dans le CLI.
@@ -48,12 +49,14 @@ accessible et le modèle configuré déjà installé. Le CLI affiche la réponse
 puis propose une nouvelle invite.
 
 Les échanges réussis sont conservés en mémoire pendant la session et transmis
-avec chaque nouveau message pour maintenir le contexte. Ils ne sont ni
-journalisés ni sauvegardés et sont oubliés à la fermeture du CLI.
+avec chaque nouveau message pour maintenir le contexte. Ce contexte est oublié
+à la fermeture du CLI. Seule la demande utilisateur et son statut de traitement
+sont persistés dans l'historique SQLite décrit ci-dessous ; les réponses du
+modèle et les résultats d'outils restent en mémoire.
 
 Une erreur Ollama affiche un message sur stderr et rend l'invite disponible.
-Si elle survient avant un appel d'outil, le tour échoué n'est pas ajouté à
-l'historique. Si l'outil a déjà été traité, son appel et son résultat sont
+Si elle survient avant un appel d'outil, le tour échoué n'est pas ajouté
+au contexte en mémoire. Si l'outil a déjà été traité, son appel et son résultat sont
 conservés, même si une réponse suivante du modèle échoue. Les échanges précédents
 restent disponibles ; après cette erreur du provider, aucun outil ni appel au
 provider n'est relancé automatiquement.
@@ -61,6 +64,55 @@ provider n'est relancé automatiquement.
 Une réponse contenant un appel JSON strict passe par le circuit d'exécution
 décrit ci-dessous. Les autres réponses sont affichées comme texte ; les
 commandes shell proposées par le modèle ne sont jamais exécutées.
+
+## Historique des tâches
+
+Le CLI utilise `sqlite3`, fourni par Python, pour créer ou ouvrir
+`<data_dir>/history.sqlite3`. Par défaut :
+`~/.local/share/simple-aios/history.sqlite3`. Chaque demande conversationnelle
+et chaque `/diagnose` crée une ligne dans la table `tasks` avant tout appel au
+provider ou aux outils. Les entrées vides, commandes inconnues, `/help`, `/version`
+et `/exit` ne créent aucune tâche.
+
+La table contient `id` (identifiant entier), `task` (demande sans espaces autour),
+`timestamp` (début en UTC au format ISO 8601) et `status`. La ligne est validée
+immédiatement dans SQLite, puis seul son statut est mis à jour :
+
+| Statut | Signification |
+| --- | --- |
+| `running` | Traitement commencé, sans statut final enregistré. |
+| `completed` | Traitement terminé et réponse finale prête à être affichée. |
+| `failed` | Erreur du provider ou erreur inattendue pendant le traitement. |
+| `interrupted` | Interruption pendant le traitement, notamment Ctrl+C. |
+
+`completed` décrit la fin du traitement par le CLI, pas la réussite de toutes
+les actions demandées ni l'exactitude du texte du modèle. Une réponse expliquant
+un refus, une erreur d'outil, un diagnostic partiel ou la limite de cinq appels
+termine aussi le traitement. Un diagnostic entier ou plusieurs appels d'outils
+restent une seule tâche. Une erreur Ollama après un outil donne `failed`, même
+si cet outil a déjà eu un effet ; aucune action n'est relancée automatiquement.
+
+Les tâches restent disponibles entre sessions sans être réinjectées dans le
+contexte du modèle. Un arrêt brutal ou l'impossibilité d'écrire le statut final
+peut laisser `running` : la réouverture ne suppose pas que la tâche a réussi
+et ne la reprend pas. Si SQLite ne peut pas être initialisé ou écrit, le CLI
+s'arrête avec le code 1 et son message d'erreur générique habituel. Une erreur
+sur l'insertion initiale empêche tout traitement de cette demande. Les connexions
+sont fermées à la sortie ; les requêtes SQL utilisent des paramètres liés.
+
+Le nouveau fichier de base est créé avec les permissions `0600`. Avant toute
+écriture, une demande contenant des marqueurs sensibles usuels (`password`,
+`token`, `secret`, `api_key`, « mot de passe », clé privée, identifiants dans
+une URL ou certains préfixes de tokens) est remplacée intégralement par
+`[contenu sensible masqué]`. Ce filtre conservateur peut masquer une demande
+anodine et ne détecte pas tous les secrets possibles : ne saisissez pas de secrets
+dans les demandes. Le message envoyé au provider reste celui saisi par
+l'utilisateur. Les réponses, arguments et résultats des outils, confirmations,
+configuration et détails des exceptions ne sont pas copiés dans cette base.
+Le journal applicatif reste sans contenu des échanges.
+
+L'étape 8.1 n'ajoute aucune commande de consultation. L'historique détaillé des
+outils (8.2) et `/history` (8.3) restent à réaliser.
 
 ## Diagnostic général
 
@@ -188,9 +240,9 @@ et les erreurs du provider au niveau ERROR avec leur type. `/exit`, Ctrl+D et
 Ctrl+C ferment proprement le journal. `log_level` filtre les événements : ERROR
 masque notamment les événements INFO ; NOTSET inclut tous les niveaux standard.
 
-Le CLI n'enregistre ni les saisies, ni la configuration, ni le texte des exceptions
-ou leurs tracebacks, afin de ne pas recopier de mots de passe ou tokens dans les
-logs. Une erreur inattendue termine le CLI avec le code 1. Si la configuration
+Le fichier de logs ne contient ni les saisies, ni la configuration, ni le texte
+des exceptions ou leurs tracebacks, afin de ne pas recopier de mots de passe ou
+tokens. Une erreur inattendue termine le CLI avec le code 1. Si la configuration
 ou le journal ne peut pas être initialisé, le CLI affiche un message sur stderr
 et termine également avec le code 1.
 
