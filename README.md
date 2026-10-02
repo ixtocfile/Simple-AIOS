@@ -8,6 +8,7 @@ configuration, des logs applicatifs et un faux provider pour les tests.
 Les six outils de lecture système sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
 permet aussi de redémarrer un service après confirmation explicite dans le CLI.
+La commande `/diagnose` rassemble cinq lectures pour un bilan général.
 
 ## Développement
 
@@ -31,11 +32,12 @@ Commandes disponibles :
 
 - `/help` : afficher l'aide.
 - `/version` : afficher la version du package.
+- `/diagnose` : diagnostic général en lecture seule, avec synthèse par le modèle.
 - `/exit` : quitter.
 
 Une entrée vide affiche une nouvelle invite. Une commande inconnue commençant
-par `/` affiche un message d'aide et laisse le shell ouvert. Ces commandes
-restent locales et ne sont pas envoyées au modèle. Ctrl+D (fin d'entrée) ou
+par `/` affiche un message d'aide et laisse le shell ouvert. `/help`, `/version`
+et `/exit` restent locales et ne sont pas envoyées au modèle. Ctrl+D (fin d'entrée) ou
 Ctrl+C ferment proprement le shell ; Ctrl+C fonctionne aussi pendant un appel
 au provider.
 
@@ -59,6 +61,47 @@ provider n'est relancé automatiquement.
 Une réponse contenant un appel JSON strict passe par le circuit d'exécution
 décrit ci-dessous. Les autres réponses sont affichées comme texte ; les
 commandes shell proposées par le modèle ne sont jamais exécutées.
+
+## Diagnostic général
+
+Saisissez `/diagnose` sans argument dans le CLI. L'application collecte les
+cinq lectures suivantes, dans cet ordre, avec les validateurs et le Policy Engine
+habituels. Elle n'autorise que la décision `ALLOW` correspondant aux outils READ ;
+`CONFIRM`, `DENY` ou une décision inattendue refusent la lecture, sans invite de
+confirmation ni exécution.
+
+| Outil | Arguments fixes | Informations consultées |
+| --- | --- | --- |
+| `system.info` | `{}` | Hôte, OS, noyau, architecture et uptime. |
+| `system.memory` | `{}` | RAM disponible, utilisée et pourcentage. |
+| `system.disk` | `{"path":"/"}` | Capacité et occupation du système de fichiers de `/`. |
+| `process.list` | `{"limit":20}` | Au plus 20 PID et noms courts, triés par PID. |
+| `systemd.list` | `{"limit":20}` | Au plus 20 services connus, triés par nom, avec leurs états. |
+
+Chaque contrôle produit un `tool_result`, y compris en cas de refus ou d'erreur.
+Un échec n'empêche pas les contrôles suivants : l'absence de systemd, par exemple,
+laisse les autres observations disponibles. Les cinq résultats sont transmis
+ensemble au provider pour un seul appel de synthèse, après la commande
+`/diagnose` dans l'historique. Ils utilisent le même format et le même rôle `user`
+que les retours d'outils de la conversation.
+
+Le prompt demande un bilan textuel fondé sur les mesures, distinguant observations,
+points à examiner et domaines non évalués. Le disque `/` ne couvre pas tous les
+montages, les listes sont bornées et les noms de processus ne mesurent pas leur
+charge CPU. Aucun seuil critique ni diagnostic causal n'est calculé par le code.
+Les tests vérifient les résultats transmis et le circuit, sans évaluer la qualité
+d'une synthèse produite par un LLM réel.
+
+Les cinq tentatives consomment le budget de cette commande. Aucun appel d'outil
+supplémentaire demandé par le modèle n'est exécuté, même en lecture seule.
+Une réponse commençant par un objet ou tableau JSON est remplacée par un message
+indiquant l'absence de synthèse textuelle. Le diagnostic ne redémarre ni ne répare
+aucun service. Les résultats et la synthèse ne sont pas journalisés.
+
+Si Ollama est indisponible, le CLI signale l'erreur et conserve les observations
+dans la session, sans nouvelle tentative automatique. Une nouvelle commande
+`/diagnose` refait toutes les lectures. Les autres demandes conversationnelles
+retrouvent leur budget habituel et leurs contrôles de permissions.
 
 ## Prompt système
 
@@ -89,6 +132,9 @@ la confirmation. Les validations et permissions restent imposées par le code ;
 la sûreté de l'exécution ne dépend pas du respect du prompt par le modèle.
 Les tests utilisent FakeLLMProvider et un transport Ollama simulé pour vérifier
 les messages transmis, sans évaluer le comportement d'un LLM réel.
+Le prompt décrit aussi la synthèse attendue après les lectures de `/diagnose` ;
+la collecte et l'interdiction de nouveaux appels durant cette synthèse sont
+imposées par le CLI.
 
 ## Configuration
 

@@ -25,6 +25,13 @@ from aios.tools import ToolRegistry, ToolResult
 
 
 MAX_TOOL_CALLS_PER_REQUEST = 5
+DIAGNOSTIC_CALLS = (
+    ("system.info", {}),
+    ("system.memory", {}),
+    ("system.disk", {"path": "/"}),
+    ("process.list", {"limit": 20}),
+    ("systemd.list", {"limit": 20}),
+)
 
 
 def authorize_tool_call(
@@ -90,6 +97,10 @@ def _tool_feedback(reply: str, registry: ToolRegistry, policy: PolicyEngine) -> 
             authorize=lambda arguments: authorize_tool_call(policy, name, arguments),
         )
 
+    return _result_feedback(name, result)
+
+
+def _result_feedback(name: str | None, result: ToolResult) -> Message:
     try:
         content = json.dumps(
             {"tool_result": {"tool": name, **asdict(result)}}, allow_nan=False,
@@ -99,6 +110,18 @@ def _tool_feedback(reply: str, registry: ToolRegistry, policy: PolicyEngine) -> 
         content = json.dumps({"tool_result": {"tool": name, **asdict(failure)}})
     # Keep the existing text-chat contract; this is application-generated data.
     return {"role": "user", "content": content}
+
+
+def _diagnostic_feedback(registry: ToolRegistry, policy: PolicyEngine) -> list[Message]:
+    """Collect the fixed READ checks; CONFIRM and DENY never prompt or execute."""
+    feedback = []
+    for name, arguments in DIAGNOSTIC_CALLS:
+        result = registry.execute(
+            name, arguments,
+            authorize=lambda _, name=name: policy.evaluate(name) is PolicyDecision.ALLOW,
+        )
+        feedback.append(_result_feedback(name, result))
+    return feedback
 
 
 def _run_shell(provider: LLMProvider) -> None:
@@ -124,17 +147,25 @@ def _run_shell(provider: LLMProvider) -> None:
                 "Écrivez un message pour discuter avec le LLM.\n"
                 "/help - Afficher l'aide\n"
                 "/version - Afficher la version\n"
+                "/diagnose - Diagnostic général en lecture seule\n"
                 "/exit - Quitter"
             )
         elif command == "/version":
             print(f"Simple-AIOS {version('simple-aios')}")
-        elif command.startswith("/"):
+        elif command.startswith("/") and command != "/diagnose":
             print("Commande inconnue. Tapez /help pour afficher l'aide.")
         else:
             pending: list[Message] = [*messages, {"role": "user", "content": command}]
             try:
+                remaining_calls = MAX_TOOL_CALLS_PER_REQUEST
+                if command == "/diagnose":
+                    pending = [*pending, *_diagnostic_feedback(registry, policy)]
+                    # Keep all observations if the summary fails; no automatic retry.
+                    messages = pending
+                    # The five checks have already consumed the budget: summary only.
+                    remaining_calls = 0
                 reply = provider.chat(pending)
-                for _ in range(MAX_TOOL_CALLS_PER_REQUEST):
+                for _ in range(remaining_calls):
                     feedback = _tool_feedback(reply, registry, policy)
                     if feedback is None:
                         break
@@ -143,12 +174,18 @@ def _run_shell(provider: LLMProvider) -> None:
                     messages = pending
                     reply = provider.chat(pending)
                 else:
-                    # Inspect only: a sixth attempt must never reach an execution hook.
+                    # Inspect only: no call may execute after the budget is consumed.
                     if reply.lstrip().startswith(("{", "[")):
-                        reply = (
-                            f"Limite de {MAX_TOOL_CALLS_PER_REQUEST} appels d'outils "
-                            "atteinte pour cette requête."
-                        )
+                        if command == "/diagnose":
+                            reply = (
+                                "Diagnostic terminé sans synthèse : "
+                                "aucun appel d'outil supplémentaire autorisé."
+                            )
+                        else:
+                            reply = (
+                                f"Limite de {MAX_TOOL_CALLS_PER_REQUEST} appels d'outils "
+                                "atteinte pour cette requête."
+                            )
             except OllamaError as error:
                 logger.error("Provider error (%s)", type(error).__name__)
                 print(

@@ -23,6 +23,7 @@ HELP = (
     "Écrivez un message pour discuter avec le LLM.\n"
     "/help - Afficher l'aide\n"
     "/version - Afficher la version\n"
+    "/diagnose - Diagnostic général en lecture seule\n"
     "/exit - Quitter\n"
 )
 UNKNOWN = "Commande inconnue. Tapez /help pour afficher l'aide.\n"

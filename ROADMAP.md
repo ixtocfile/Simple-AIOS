@@ -6,7 +6,7 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 7.1 terminée. Aucune étape en cours ; prochaine étape : 7.2,
+État : étape 7.2 terminée. Aucune étape en cours ; prochaine étape : 8.1,
 à commencer uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
@@ -162,6 +162,18 @@ vérifiées. Les textes utilisateur et résultats restent dans leurs rôles pré
 sans promotion en instructions système. Tests avec FakeLLMProvider et HTTP
 simulé, sans LLM réel ; aucun nouveau mécanisme de diagnostic ajouté.
 
+Validation de l'étape 7.2 sous Python 3.12 : `python -m pytest -q` : 610 tests
+réussis. `/diagnose` collecte cinq contrôles READ fixes avec validation et policy
+avant chaque exécution, puis demande une unique synthèse au provider. Refus des
+risques non READ sans confirmation, erreurs partielles ou totales, résultats
+invalides, conservation après erreur du provider, nouvelles lectures à chaque
+diagnostic et retour au budget conversationnel vérifiés. Aucun appel d'outil du
+modèle ne peut être exécuté pendant la synthèse. Tests avec FakeLLMProvider et
+lectures simulées. Un essai local a validé les lectures réelles de system.info,
+system.memory, system.disk et process.list ; systemd.list a échoué proprement
+dans cet environnement sans systemd actif. Aucun redémarrage, aucune correction
+automatique ni étape suivante ajoutés.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -207,7 +219,7 @@ simulé, sans LLM réel ; aucun nouveau mécanisme de diagnostic ajouté.
 ## Phase 7 — Diagnostic
 
 - [done] 7.1 — Prompt système : rôle, outils, résultats réels et permissions.
-- [todo] 7.2 — Diagnostic général à partir de plusieurs outils READ.
+- [done] 7.2 — Diagnostic général à partir de plusieurs outils READ.
 
 ## Phase 8 — Mémoire
 
