@@ -6,8 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 10.2 terminée. Aucune étape en cours ; prochaine étape : 10.3,
-à commencer uniquement sur demande.
+État : étape 10.3 terminée. La V0.1 est documentée et aucune étape suivante
+n'est définie.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -291,6 +291,23 @@ package et entrée aiosd retirés, données préservées et seconde exécution r
 Aucun service réel modifié ni LLM sollicité. Documentation d'utilisation mise
 à jour ; aucune dépendance ajoutée ni guide Ubuntu/Debian commencé.
 
+Validation de l'étape 10.3 sous Python 3.12 : `python -m pytest -q` : 860 tests
+réussis avant l'interruption. À la reprise du 5 octobre 2026, après installation
+éditable, la même commande donne 803 tests réussis et 57 échecs liés aux sockets
+Unix interdits par l'environnement ; l'accès supplémentaire a été refusé par
+la politique d'approbation. Aucun code ni test n'a été modifié pour cette étape.
+Guide `docs/installation-ubuntu-debian.md` ajouté pour Ubuntu 24.04 LTS, Debian
+13 et les environnements Debian 12 dont Python est trop ancien.
+Prérequis, installation du dépôt, Ollama et modèle `qwen3`, service systemd
+utilisateur, vérifications CLI, configuration facultative, dépannage, mise à
+jour et désinstallation sont décrits à partir des scripts et chemins réellement
+présents dans le projet. Les commandes et liens vers les sources officielles
+ont été relus ; les 14 blocs Bash passent `bash -n`, l'exemple TOML correspond
+à la configuration fournie et les cibles des liens locaux existent. Aucun essai
+complet sur une machine Ubuntu ou Debian neuve, aucun démarrage sous systemd
+actif ni appel à un LLM réel n'a été réalisé. Aucune dépendance ajoutée ni étape
+suivante définie.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -357,4 +374,4 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 - [done] 10.1 — Script d'installation simple.
 - [done] 10.2 — Script de désinstallation.
-- [todo] 10.3 — Guide d'installation Ubuntu/Debian.
+- [done] 10.3 — Guide d'installation Ubuntu/Debian.

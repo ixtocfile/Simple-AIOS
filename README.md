@@ -14,6 +14,9 @@ Le daemon local `aiosd` expose aussi le Core par un socket Unix privé.
 
 ## Installation
 
+Pour le parcours complet, consultez le
+[guide d'installation Ubuntu/Debian](docs/installation-ubuntu-debian.md).
+
 Sous Linux, avec Python 3.12 ou ultérieur et son module `venv` disponible,
 lancez depuis le dépôt, avec votre compte utilisateur :
 
