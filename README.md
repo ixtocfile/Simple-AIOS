@@ -8,7 +8,8 @@ configuration, des logs applicatifs, un historique SQLite des tâches et appels
 d'outils, et un faux provider pour les tests.
 Les huit outils de lecture sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
-permet aussi de redémarrer un service après confirmation explicite dans le CLI.
+redémarre un service et `filesystem.mkdir` crée un dossier dans le workspace,
+après confirmation explicite dans le CLI.
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
 Le daemon local `aiosd` expose aussi le Core par un socket Unix privé.
 
@@ -163,7 +164,7 @@ commandes shell proposées par le modèle ne sont jamais exécutées.
 porte une session synchrone indépendante du terminal. Il conserve le contexte,
 valide les appels, applique la policy et la limite de cinq tentatives, exécute
 les outils autorisés et enregistre tâches et résultats dans l'historique.
-Par défaut, `build_tool_registry()` fournit les neuf outils existants.
+Par défaut, `build_tool_registry()` fournit les dix outils existants.
 
 - `chat(text)` traite un message non vide et renvoie la réponse textuelle.
 - `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
@@ -546,7 +547,7 @@ fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
 l'historique précédent. Le prompt n'est ni affiché ni journalisé.
 
-Il décrit le rôle d'assistant CLI Linux, les neuf outils enregistrés avec leurs
+Il décrit le rôle d'assistant CLI Linux, les dix outils enregistrés avec leurs
 arguments et risques, le format JSON strict et la limite de cinq tentatives par
 requête. Son catalogue est explicite, sans découverte d'outils ni lecture de
 données système à sa construction. Les tests vérifient sa correspondance avec
@@ -714,7 +715,8 @@ La copie présentée à l'autorisation inclut les valeurs normalisées ou par
 défaut ; la modifier ne change pas les arguments exécutés.
 
 Les appels Python de confiance peuvent généralement omettre ce paramètre.
-`systemd.restart` exige toutefois une fonction d'autorisation, même hors du CLI ;
+`systemd.restart` et `filesystem.mkdir` exigent toutefois une fonction
+d'autorisation, même hors du CLI ;
 son absence produit `Tool execution denied`. Le Core fournit systématiquement
 cette fonction pour appliquer le Policy Engine et la confirmation utilisateur
 à chaque appel du modèle. Le registre lui-même reste indépendant du CLI.
@@ -735,7 +737,7 @@ Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les huit
 outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`,
 `systemd.status`, `systemd.list`, `filesystem.list` et `filesystem.read`,
 déclarent `RiskLevel.READ`.
-`systemd.restart` déclare `RiskLevel.CONFIRM`.
+`systemd.restart` et `filesystem.mkdir` déclarent `RiskLevel.CONFIRM`.
 Le registre valide le type du niveau à l'enregistrement : une simple chaîne
 comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
 sans exécuter l'outil.
@@ -813,8 +815,8 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les huit outils de lecture sont classés `READ` et `systemd.restart`
-exige une confirmation. Le daemon transmet au CLI les arguments déjà validés
+action. Les huit outils de lecture sont classés `READ` ; `systemd.restart` et
+`filesystem.mkdir` exigent une confirmation. Le daemon transmet au CLI les arguments déjà validés
 et normalisés, puis renvoie son accord au Core juste avant l'exécution de l'outil.
 
 ## Format JSON des appels d'outils
@@ -866,8 +868,8 @@ rien. Le Core enchaîne les vérifications décrites ci-dessous.
 ## Exécution d'un appel dans la conversation
 
 Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`,
-`systemd.status`, `systemd.list`, `systemd.restart`, `filesystem.list` et
-`filesystem.read` au début de chaque session, sans les exécuter. Lorsqu'une
+`systemd.status`, `systemd.list`, `systemd.restart`, `filesystem.list`,
+`filesystem.read` et `filesystem.mkdir` au début de chaque session, sans les exécuter. Lorsqu'une
 réponse du modèle est un appel JSON valide, il suit cet ordre :
 
 1. Enregistrer la tentative et ses arguments filtrés dans l'historique SQLite.
@@ -1291,6 +1293,49 @@ commande externe. Le contenu transmis au modèle reste une donnée non fiable,
 jamais une instruction ; son champ `content` est masqué dans l'historique SQLite
 et il n'est pas journalisé. Les tests utilisent des fichiers temporaires et
 FakeLLMProvider, sans LLM réel.
+
+## Outil fichiers : filesystem.mkdir
+
+`aios.filesystem_mkdir.FilesystemMkdirTool` crée un seul dossier neuf dans
+`~/AIOS-Workspace`, sous le compte du daemon. Son niveau est `CONFIRM` : après
+validation, le Policy Engine impose un accord explicite `oui` dans un terminal
+interactif. Un accord est nécessaire pour chaque appel. Sans confirmation,
+aucun accès au filesystem n'est effectué par l'outil.
+
+Le seul argument accepté, obligatoire, est `path`. Le chemin est relatif au
+workspace, UTF-8, d'au plus 4096 octets, avec les mêmes restrictions que les
+outils de lecture : pas de chemin absolu, de traversée `..`, de composant vide
+ou `.`, d'antislash ni de contrôle ASCII. Le chemin `"."` est également refusé.
+Les noms sont littéraux : aucune expansion du tilde, de glob ou de shell.
+
+Le workspace et tous les dossiers parents doivent déjà exister et ne doivent
+pas être des liens symboliques, y compris les ancêtres du workspace. La création
+n'est pas récursive. Toute entrée déjà présente à la destination est refusée,
+qu'il s'agisse d'un dossier, d'un fichier, d'un lien même cassé ou d'un fichier
+spécial. Exemple si `documents` existe déjà :
+
+```json
+{"tool":"filesystem.mkdir","arguments":{"path":"documents/nouveau-dossier"}}
+```
+
+Après confirmation, les parents sont ouverts sans suivre de lien, puis un seul
+appel à [`os.mkdir`](https://docs.python.org/3.12/library/os.html#os.mkdir)
+crée le nom demandé relativement au dossier parent ouvert. Les permissions
+demandées sont `0700`, réduites par l'umask du processus. Aucune commande externe,
+élévation de privilèges, modification des permissions existantes ou tentative
+de remplacement n'est effectuée.
+
+Un succès contient `{"path":"documents/nouveau-dossier","created":true}` dans
+`data`. Un argument invalide produit `Invalid tool arguments`, une absence ou
+un refus d'autorisation `Tool execution denied`. Une destination existante,
+un parent absent, un lien dans les parents ou une erreur système produit
+`Tool execution failed`, sans détail d'exception ni nouvelle tentative.
+Le Core transmet le résultat réel au modèle et l'enregistre dans l'historique
+SQLite avec les arguments filtrés et le statut.
+
+Comme pour `systemd.restart`, un appel Python direct doit fournir `authorize` ;
+seul son retour strictement égal au booléen `True` autorise la création.
+Les tests créent uniquement des dossiers temporaires, avec FakeLLMProvider.
 
 ## Tests
 

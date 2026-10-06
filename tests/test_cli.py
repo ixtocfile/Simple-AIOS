@@ -416,16 +416,71 @@ def tool_reply(arguments=None):
     return json.dumps({"tool": "test.action", "arguments": arguments or {}})
 
 
-def test_default_cli_registry_contains_eight_read_tools_and_restart_with_confirmation():
+def test_default_cli_registry_contains_eight_read_tools_and_two_confirmed_tools():
     tools = build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
         "systemd.status", "systemd.list", "systemd.restart",
-        "filesystem.list", "filesystem.read",
+        "filesystem.list", "filesystem.read", "filesystem.mkdir",
     ]
     assert [tool.risk_level for tool in tools] == (
-        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2
+        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2 + [RiskLevel.CONFIRM]
     )
+
+
+@pytest.mark.parametrize(("interactive", "answer", "allowed"), [
+    (True, "oui", True), (True, " OUI ", True), (True, "", False),
+    (True, "non", False), (True, "yes", False), (True, EOFError, False),
+    (True, KeyboardInterrupt, False), (False, None, False),
+])
+def test_cli_mkdir_requires_explicit_terminal_confirmation(
+    cli_session, monkeypatch, capsys, tmp_path, interactive, answer, allowed,
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "AIOS-Workspace"
+    workspace.mkdir()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: interactive)
+    reply = json.dumps({"tool": "filesystem.mkdir", "arguments": {"path": "notes"}})
+    provider = FakeLLMProvider([reply, "Résultat reçu"])
+    entries = ["Crée le dossier"] + ([answer] if interactive else []) + ["/exit"]
+
+    assert cli_session(provider, entries) == 0
+
+    assert len(provider.calls) == 2
+    assert json.loads(provider.calls[1][-1]["content"]) == {"tool_result": {
+        "tool": "filesystem.mkdir", "success": allowed,
+        "data": {"path": "notes", "created": True} if allowed else None,
+        "error": None if allowed else "Tool execution denied",
+    }}
+    assert (workspace / "notes").is_dir() is allowed
+    captured = capsys.readouterr()
+    assert captured.out.count("Action à confirmer") == int(interactive)
+    if interactive:
+        assert '"outil": "filesystem.mkdir", "arguments": {"path": "notes"}' in captured.out
+    if not allowed:
+        assert "Action refusée." in captured.out
+    assert captured.err == ""
+    assert "notes" not in (tmp_path / "logs/simple-aios.log").read_text()
+
+
+def test_cli_mkdir_requires_a_fresh_confirmation_for_each_creation(
+    cli_session, monkeypatch, capsys, tmp_path,
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "AIOS-Workspace"
+    workspace.mkdir()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    provider = FakeLLMProvider([
+        json.dumps({"tool": "filesystem.mkdir", "arguments": {"path": name}})
+        for name in ("first", "second")
+    ] + ["Terminé"])
+
+    assert cli_session(provider, ["Crée les dossiers", "oui", "non", "/exit"]) == 0
+
+    assert [path.name for path in workspace.iterdir()] == ["first"]
+    results = [json.loads(call[-1]["content"])["tool_result"] for call in provider.calls[1:]]
+    assert [result["success"] for result in results] == [True, False]
+    assert capsys.readouterr().out.count("Action à confirmer") == 2
 
 
 @pytest.mark.parametrize(("interactive", "answer", "allowed"), [

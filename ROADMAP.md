@@ -6,8 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 et 11.2 de la V0.2 terminées.
-Prochaine étape : 11.3 — `filesystem.mkdir`, à réaliser uniquement sur demande.
+État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 à 11.3 de la V0.2 terminées.
+Prochaine étape : 11.4 — `filesystem.write`, à réaliser uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -338,6 +338,21 @@ testés avec des fichiers temporaires et FakeLLMProvider. Aucun vrai LLM,
 aucune dépendance ajoutée, aucune configuration des workspaces ni étape
 suivante implémentée.
 
+Validation de l'étape 11.3 sous Python 3.12 : installation éditable réussie.
+Les tests ciblés filesystem, CLI, prompt, Core et historique d'outils donnent
+331 réussites, dont 80 nouveaux tests. `python -m pytest -q` : 996 réussites et
+57 échecs liés aux sockets Unix interdits par l'environnement, comme à l'étape
+précédente ; aucun test supprimé ou ignoré. `filesystem.mkdir` CONFIRM intégré
+au Core et au prompt, avec le workspace fixe et les contrôles de chemins
+existants. Création d'un seul dossier, parents préexistants, permissions 0700
+réduites par l'umask, refus des entrées existantes et des liens symboliques,
+changements concurrents de chemins et fermeture des descripteurs vérifiés.
+Validation avant confirmation, refus par défaut même en Python direct, accord
+CLI explicite et non réutilisé, DENY non contournable, erreurs génériques et
+résultat réel transmis au modèle et à SQLite testés. Dossiers temporaires et
+FakeLLMProvider uniquement, sans commande externe, privilèges supplémentaires,
+nouvelle dépendance ni étape suivante implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -408,7 +423,7 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Simple-AIOS V0.2
 
-Les étapes 11.1 et 11.2 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
+Les étapes 11.1 à 11.3 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
 Les étapes à faire décrivent des objectifs, pas des fonctionnalités présentes.
 La V0.2 commence par **11.1 — `filesystem.list`**.
 
@@ -448,7 +463,7 @@ Contraintes :
 Commit :
 `feat: add filesystem read tool`
 
-#### [todo] 11.3 — `filesystem.mkdir`
+#### [done] 11.3 — `filesystem.mkdir`
 
 Créer un dossier.
 
@@ -457,7 +472,7 @@ Niveau de risque :
 
 Validation stricte du chemin.
 
-Commit futur :
+Commit :
 `feat: add directory creation tool`
 
 #### [todo] 11.4 — `filesystem.write`

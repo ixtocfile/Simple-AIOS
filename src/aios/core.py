@@ -5,6 +5,7 @@ from dataclasses import asdict
 import json
 
 from aios.filesystem_list import FilesystemListTool
+from aios.filesystem_mkdir import FilesystemMkdirTool
 from aios.filesystem_read import FilesystemReadTool
 from aios.history import TaskHistory
 from aios.llm import LLMProvider, Message
@@ -37,7 +38,7 @@ def build_tool_registry() -> ToolRegistry:
     for tool in (
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
         SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
-        FilesystemListTool(), FilesystemReadTool(),
+        FilesystemListTool(), FilesystemReadTool(), FilesystemMkdirTool(),
     ):
         registry.register(tool)
     return registry
