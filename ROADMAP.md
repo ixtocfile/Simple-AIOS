@@ -6,8 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : phases 0 à 10 de la V0.1 terminées. Étape 11.1 de la V0.2 terminée.
-Prochaine étape : 11.2 — `filesystem.read`, à réaliser uniquement sur demande.
+État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 et 11.2 de la V0.2 terminées.
+Prochaine étape : 11.3 — `filesystem.mkdir`, à réaliser uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -323,6 +323,21 @@ testés sur des fichiers temporaires et avec FakeLLMProvider. Aucun vrai LLM
 sollicité, aucune dépendance ajoutée, aucune configuration des workspaces ni
 étape suivante implémentée.
 
+Validation de l'étape 11.2 sous Python 3.12 : les tests ciblés de lecture,
+listing, prompt, CLI, Core et historique d'outils donnent 251 réussites,
+dont 60 nouveaux tests. `python -m pytest -q` : 916 réussites et 57 échecs liés
+aux sockets Unix interdits par l'environnement, comme à l'étape précédente ;
+aucun test supprimé ou ignoré. Outil `filesystem.read` READ intégré au Core et
+au prompt, avec le workspace fixe de 11.1 et les mêmes contrôles de chemins
+partagés. Lecture UTF-8 stricte bornée à 64 Kio, taille en octets, fichier vide,
+lectures courtes, croissance concurrente, refus des liens, dossiers et fichiers
+spéciaux, remplacement du fichier et fermeture des descripteurs vérifiés.
+Validation et policy avant lecture, erreurs sans contenu partiel, absence
+d'écriture ou de commande externe et contenu remplacé avant persistance SQLite
+testés avec des fichiers temporaires et FakeLLMProvider. Aucun vrai LLM,
+aucune dépendance ajoutée, aucune configuration des workspaces ni étape
+suivante implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -393,7 +408,7 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Simple-AIOS V0.2
 
-L'étape 11.1 est terminée ; les autres étapes ci-dessous restent `[todo]`.
+Les étapes 11.1 et 11.2 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
 Les étapes à faire décrivent des objectifs, pas des fonctionnalités présentes.
 La V0.2 commence par **11.1 — `filesystem.list`**.
 
@@ -419,7 +434,7 @@ Pas de modification du filesystem.
 Commit :
 `feat: add filesystem listing tool`
 
-#### [todo] 11.2 — `filesystem.read`
+#### [done] 11.2 — `filesystem.read`
 
 Ajouter un outil READ permettant de lire un fichier texte.
 
@@ -430,7 +445,7 @@ Contraintes :
 - refus des fichiers non autorisés ;
 - résultat borné pour ne pas envoyer des fichiers énormes au LLM.
 
-Commit futur :
+Commit :
 `feat: add filesystem read tool`
 
 #### [todo] 11.3 — `filesystem.mkdir`

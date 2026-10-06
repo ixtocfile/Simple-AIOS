@@ -416,15 +416,15 @@ def tool_reply(arguments=None):
     return json.dumps({"tool": "test.action", "arguments": arguments or {}})
 
 
-def test_default_cli_registry_contains_seven_read_tools_and_restart_with_confirmation():
+def test_default_cli_registry_contains_eight_read_tools_and_restart_with_confirmation():
     tools = build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
         "systemd.status", "systemd.list", "systemd.restart",
-        "filesystem.list",
+        "filesystem.list", "filesystem.read",
     ]
     assert [tool.risk_level for tool in tools] == (
-        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM, RiskLevel.READ]
+        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2
     )
 
 

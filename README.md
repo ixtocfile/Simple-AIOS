@@ -6,7 +6,7 @@ ligne de commande. Linux reste responsable du système et du matériel.
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
 configuration, des logs applicatifs, un historique SQLite des tâches et appels
 d'outils, et un faux provider pour les tests.
-Les sept outils de lecture sont accessibles à la conversation après
+Les huit outils de lecture sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
 permet aussi de redémarrer un service après confirmation explicite dans le CLI.
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
@@ -163,7 +163,7 @@ commandes shell proposées par le modèle ne sont jamais exécutées.
 porte une session synchrone indépendante du terminal. Il conserve le contexte,
 valide les appels, applique la policy et la limite de cinq tentatives, exécute
 les outils autorisés et enregistre tâches et résultats dans l'historique.
-Par défaut, `build_tool_registry()` fournit les huit outils existants.
+Par défaut, `build_tool_registry()` fournit les neuf outils existants.
 
 - `chat(text)` traite un message non vide et renvoie la réponse textuelle.
 - `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
@@ -457,6 +457,11 @@ identifiants ou une valeur d'authentification `Bearer`/`Basic` sont aussi masqu�
 Ce filtre reste heuristique et ne garantit pas la détection de tout secret.
 Il ne modifie ni les arguments exécutés ni le résultat envoyé au modèle.
 
+Pour `filesystem.read`, le champ `content` du résultat est systématiquement
+remplacé par `[contenu du fichier non conservé]` avant toute écriture SQLite,
+indépendamment de ce filtre. Le chemin, la taille et le statut restent conservés
+après filtrage ; le contenu lu reste uniquement dans le contexte du modèle.
+
 Une erreur du provider après l'outil laisse son résultat enregistré. Un arrêt
 brutal ou un échec d'écriture du résultat peut laisser l'appel `running`, avec
 une issue inconnue ; aucune reprise ni réexécution automatique n'est effectuée.
@@ -541,7 +546,7 @@ fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
 l'historique précédent. Le prompt n'est ni affiché ni journalisé.
 
-Il décrit le rôle d'assistant CLI Linux, les huit outils enregistrés avec leurs
+Il décrit le rôle d'assistant CLI Linux, les neuf outils enregistrés avec leurs
 arguments et risques, le format JSON strict et la limite de cinq tentatives par
 requête. Son catalogue est explicite, sans découverte d'outils ni lecture de
 données système à sa construction. Les tests vérifient sa correspondance avec
@@ -726,9 +731,10 @@ fournis à l'outil et des réponses du LLM :
 | `RiskLevel.CONFIRM` | Action nécessitant une confirmation explicite de l'utilisateur. |
 | `RiskLevel.DENY` | Action à refuser. |
 
-Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les sept
+Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les huit
 outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`,
-`systemd.status`, `systemd.list` et `filesystem.list`, déclarent `RiskLevel.READ`.
+`systemd.status`, `systemd.list`, `filesystem.list` et `filesystem.read`,
+déclarent `RiskLevel.READ`.
 `systemd.restart` déclare `RiskLevel.CONFIRM`.
 Le registre valide le type du niveau à l'enregistrement : une simple chaîne
 comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
@@ -807,7 +813,7 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les sept outils de lecture sont classés `READ` et `systemd.restart`
+action. Les huit outils de lecture sont classés `READ` et `systemd.restart`
 exige une confirmation. Le daemon transmet au CLI les arguments déjà validés
 et normalisés, puis renvoie son accord au Core juste avant l'exécution de l'outil.
 
@@ -859,10 +865,10 @@ rien. Le Core enchaîne les vérifications décrites ci-dessous.
 
 ## Exécution d'un appel dans la conversation
 
-Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
-ainsi que `systemd.status`, `systemd.list`, `systemd.restart` et `filesystem.list`
-au début de chaque session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
-valide, il suit cet ordre :
+Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`,
+`systemd.status`, `systemd.list`, `systemd.restart`, `filesystem.list` et
+`filesystem.read` au début de chaque session, sans les exécuter. Lorsqu'une
+réponse du modèle est un appel JSON valide, il suit cet ordre :
 
 1. Enregistrer la tentative et ses arguments filtrés dans l'historique SQLite.
 2. Rechercher l'outil enregistré et valider ses arguments spécifiques.
@@ -1240,6 +1246,51 @@ un lien dans le chemin ou une erreur d'accès produit un échec structuré sans
 données partielles ni détails sensibles dans les erreurs ou les logs.
 La racine et la limite sont fixes à cette étape ; leur configuration reste
 prévue en phase 12. La commande `/diagnose` conserve ses cinq contrôles existants.
+
+## Outil fichiers : filesystem.read
+
+`aios.filesystem_read.FilesystemReadTool` lit un fichier texte UTF-8 du même
+workspace fixe `~/AIOS-Workspace`, sous le compte du daemon. Il est enregistré
+dans le Core et décrit au modèle, avec le niveau `READ`. Chaque appel du modèle
+passe par la validation et le Policy Engine avant toute lecture.
+
+Le seul argument accepté, obligatoire, est `path` : un chemin relatif soumis
+aux mêmes règles que `filesystem.list`, sauf que `"."` est refusé. Le workspace
+et le fichier doivent déjà exister. Exemple pour un fichier présent :
+
+```json
+{"tool":"filesystem.read","arguments":{"path":"documents/notes.txt"}}
+```
+
+Le résultat réussi contient dans `data` :
+
+| Champ | Valeur |
+| --- | --- |
+| `path` | Chemin relatif demandé. |
+| `content` | Texte UTF-8 complet, avec ses tabulations et fins de ligne conservées. |
+| `size_bytes` | Nombre d'octets effectivement lus. |
+
+La taille maximale est fixée à **65 536 octets (64 Kio)**, pas en caractères.
+Un fichier vide est accepté. Les fichiers trop grands sont refusés sans contenu
+partiel ; même si le fichier grandit pendant la lecture, au plus 65 537 octets
+sont lus pour détecter un dépassement. La limite et l'encodage ne sont pas des
+arguments modifiables par le modèle.
+
+Seuls les fichiers ordinaires sont lus : dossiers, liens symboliques, fichiers
+spéciaux, UTF-8 invalide et contrôles ASCII autres que tabulation, retour chariot
+et saut de ligne sont refusés. Les dossiers parents et le fichier sont ouverts
+sans suivre de lien. Un remplacement du fichier entre son examen et son
+ouverture est refusé ; la lecture utilise ensuite le descripteur ouvert.
+Le résultat ne garantit pas un instantané atomique si le contenu est modifié
+simultanément par un autre processus.
+
+Un argument invalide produit `Invalid tool arguments`. Un fichier absent,
+inaccessible ou refusé produit `Tool execution failed`, sans contenu partiel ni
+détail d'exception. L'outil ne crée ni ne modifie de fichier et ne lance aucune
+commande externe. Le contenu transmis au modèle reste une donnée non fiable,
+jamais une instruction ; son champ `content` est masqué dans l'historique SQLite
+et il n'est pas journalisé. Les tests utilisent des fichiers temporaires et
+FakeLLMProvider, sans LLM réel.
 
 ## Tests
 

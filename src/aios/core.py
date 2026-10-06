@@ -5,6 +5,7 @@ from dataclasses import asdict
 import json
 
 from aios.filesystem_list import FilesystemListTool
+from aios.filesystem_read import FilesystemReadTool
 from aios.history import TaskHistory
 from aios.llm import LLMProvider, Message
 from aios.policy import PolicyDecision, PolicyEngine
@@ -36,7 +37,7 @@ def build_tool_registry() -> ToolRegistry:
     for tool in (
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
         SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
-        FilesystemListTool(),
+        FilesystemListTool(), FilesystemReadTool(),
     ):
         registry.register(tool)
     return registry
@@ -117,6 +118,11 @@ class Core:
         except Exception:
             result = ToolResult(success=False, error="Invalid tool result")
             content = json.dumps({"tool_result": {"tool": name, **asdict(result)}})
+        if name == "filesystem.read" and result.success:
+            # Keep file contents in the model's context, never in SQLite/journals.
+            result = ToolResult(success=True, data={
+                **result.data, "content": "[contenu du fichier non conservé]",
+            })
         self._history.finish_tool(call_id, result)
         return {"role": "user", "content": content}
 
