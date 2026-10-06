@@ -38,6 +38,15 @@ un unique @ commencent par une lettre ou un chiffre, puis acceptent lettres,
 chiffres, points, tirets, underscores et deux-points. Refuse noms abrégés,
 templates sans instance, chemins, espaces, motifs glob et séquences échappées.
 Utilise le service demandé par l'utilisateur, jamais le nom d'exemple par défaut.
+- filesystem.list [READ] : lister un dossier de ~/AIOS-Workspace, sans récursion ni lecture du contenu des fichiers.
+path facultatif, relatif à ce workspace, défaut ".", au plus 4096 octets UTF-8.
+Pas de chemin absolu, de "..",
+de composant vide ou "." (sauf path="."), d'antislash ni de caractère de contrôle.
+Les liens symboliques ne sont jamais suivis. Au plus 100 entrées, triées par nom
+après sélection, avec truncated si la liste est incomplète. Chaque entrée contient
+name, type (file, directory, symlink ou other) et size_bytes (octets pour un fichier,
+null sinon). Le workspace doit déjà exister ; cet outil ne crée rien.
+{"tool":"filesystem.list","arguments":{"path":"."}}
 
 Résultats réels
 L'application renvoie après ton appel un message de rôle user contenant un objet

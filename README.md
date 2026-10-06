@@ -6,7 +6,7 @@ ligne de commande. Linux reste responsable du système et du matériel.
 Le projet fournit un CLI conversationnel avec Ollama, un chargeur de
 configuration, des logs applicatifs, un historique SQLite des tâches et appels
 d'outils, et un faux provider pour les tests.
-Les six outils de lecture système sont accessibles à la conversation après
+Les sept outils de lecture sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
 permet aussi de redémarrer un service après confirmation explicite dans le CLI.
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
@@ -163,7 +163,7 @@ commandes shell proposées par le modèle ne sont jamais exécutées.
 porte une session synchrone indépendante du terminal. Il conserve le contexte,
 valide les appels, applique la policy et la limite de cinq tentatives, exécute
 les outils autorisés et enregistre tâches et résultats dans l'historique.
-Par défaut, `build_tool_registry()` fournit les sept outils existants.
+Par défaut, `build_tool_registry()` fournit les huit outils existants.
 
 - `chat(text)` traite un message non vide et renvoie la réponse textuelle.
 - `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
@@ -541,7 +541,7 @@ fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
 l'historique précédent. Le prompt n'est ni affiché ni journalisé.
 
-Il décrit le rôle d'assistant CLI Linux, les sept outils enregistrés avec leurs
+Il décrit le rôle d'assistant CLI Linux, les huit outils enregistrés avec leurs
 arguments et risques, le format JSON strict et la limite de cinq tentatives par
 requête. Son catalogue est explicite, sans découverte d'outils ni lecture de
 données système à sa construction. Les tests vérifient sa correspondance avec
@@ -726,9 +726,9 @@ fournis à l'outil et des réponses du LLM :
 | `RiskLevel.CONFIRM` | Action nécessitant une confirmation explicite de l'utilisateur. |
 | `RiskLevel.DENY` | Action à refuser. |
 
-Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les six
-outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`
-ainsi que `systemd.status` et `systemd.list`, déclarent `RiskLevel.READ`.
+Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les sept
+outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`,
+`systemd.status`, `systemd.list` et `filesystem.list`, déclarent `RiskLevel.READ`.
 `systemd.restart` déclare `RiskLevel.CONFIRM`.
 Le registre valide le type du niveau à l'enregistrement : une simple chaîne
 comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
@@ -807,7 +807,7 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les six outils de lecture sont classés `READ` et `systemd.restart`
+action. Les sept outils de lecture sont classés `READ` et `systemd.restart`
 exige une confirmation. Le daemon transmet au CLI les arguments déjà validés
 et normalisés, puis renvoie son accord au Core juste avant l'exécution de l'outil.
 
@@ -860,8 +860,8 @@ rien. Le Core enchaîne les vérifications décrites ci-dessous.
 ## Exécution d'un appel dans la conversation
 
 Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`
-ainsi que `systemd.status`, `systemd.list` et `systemd.restart` au début de chaque
-session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
+ainsi que `systemd.status`, `systemd.list`, `systemd.restart` et `filesystem.list`
+au début de chaque session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
 valide, il suit cet ordre :
 
 1. Enregistrer la tentative et ses arguments filtrés dans l'historique SQLite.
@@ -1187,6 +1187,59 @@ Un binaire absent, un refus de permission ou un code de sortie non nul produit
 ne permet pas de conclure à l'annulation du job côté systemd. L'outil ne réessaie
 pas et ne lance aucune commande de remplacement. Les tests simulent tous les
 redémarrages et utilisent FakeLLMProvider ; aucun service réel n'est redémarré.
+
+## Outil fichiers : filesystem.list
+
+`aios.filesystem_list.FilesystemListTool` liste uniquement le contenu immédiat
+d'un dossier du workspace fixe `~/AIOS-Workspace`, sous le compte exécutant
+`aiosd`. Il est enregistré dans le Core et décrit au modèle. Son niveau est
+`READ` ; le Policy Engine doit autoriser chaque appel avant tout accès au disque.
+
+Le workspace doit déjà exister : l'outil ne crée ni dossier ni fichier. Pour le
+préparer manuellement avec le compte du daemon :
+
+```bash
+mkdir -p "$HOME/AIOS-Workspace"
+```
+
+`path` est facultatif, avec `"."` par défaut. Il désigne le workspace ou un
+sous-dossier, toujours relativement à ce workspace, indépendamment du répertoire
+courant du CLI. Exemple pour un sous-dossier `documents` existant :
+
+```json
+{"tool":"filesystem.list","arguments":{"path":"documents"}}
+```
+
+Seul `path` est accepté. Le chemin doit être une chaîne UTF-8 non vide d'au plus
+4096 octets, sans caractère de contrôle, antislash ni composant `..`, vide ou
+`.` (sauf le chemin `"."` lui-même). Les chemins absolus sont refusés. Il n'y a
+ni expansion du tilde, ni glob, ni shell.
+
+La racine, ses ancêtres et les sous-dossiers doivent être de vrais dossiers,
+sans lien symbolique. Chaque composant est ouvert relativement au descripteur
+de son parent, sans suivre les liens ; les métadonnées sont également lues
+relativement au dossier ouvert. Les liens présents dans une liste sont signalés
+comme tels, sans consulter leur cible. L'outil ne lit pas le contenu des fichiers,
+ne parcourt pas les sous-dossiers et n'exécute aucune commande externe.
+
+Le résultat `data` contient :
+
+- `path` : le chemin relatif demandé, ou `"."` ;
+- `entries` : une liste de `name`, `type` et `size_bytes` ;
+- `truncated` : vrai lorsqu'il reste des entrées au-delà de la limite.
+
+`type` vaut `file`, `directory`, `symlink` ou `other` pour les fichiers spéciaux.
+`size_bytes` est la taille en octets d'un fichier ordinaire, et `null` sinon.
+Les noms cachés sont inclus. L'outil examine au plus 101 entrées et renvoie les
+100 premières, triées entre elles par nom ; le sous-ensemble sélectionné dépend
+de l'ordre du système de fichiers. Il ne constitue pas un instantané atomique.
+Un dossier vide renvoie une liste vide et `truncated=false`.
+
+Un workspace absent, un chemin inexistant, un fichier utilisé comme dossier,
+un lien dans le chemin ou une erreur d'accès produit un échec structuré sans
+données partielles ni détails sensibles dans les erreurs ou les logs.
+La racine et la limite sont fixes à cette étape ; leur configuration reste
+prévue en phase 12. La commande `/diagnose` conserve ses cinq contrôles existants.
 
 ## Tests
 

@@ -6,9 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : phases 0 à 10 de la V0.1 terminées. La V0.2 est planifiée ci-dessous ;
-aucune de ses étapes n'est commencée. Prochaine étape : 11.1 — `filesystem.list`,
-à réaliser uniquement sur demande.
+État : phases 0 à 10 de la V0.1 terminées. Étape 11.1 de la V0.2 terminée.
+Prochaine étape : 11.2 — `filesystem.read`, à réaliser uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -309,6 +308,21 @@ complet sur une machine Ubuntu ou Debian neuve, aucun démarrage sous systemd
 actif ni appel à un LLM réel n'a été réalisé. Aucune dépendance ajoutée ni étape
 suivante définie.
 
+Validation de l'étape 11.1 sous Python 3.12 : installation éditable réussie.
+Les tests ciblés (`test_filesystem_list.py`, `test_system_prompt.py` et
+`test_cli.py`) donnent 139 réussites, dont 53 nouveaux tests pour le listing.
+`python -m pytest -q` : 856 réussites et 57 échecs liés aux sockets Unix interdits
+par l'environnement, comme lors de la validation précédente ; aucun de ces
+tests n'a été supprimé ou ignoré. Outil `filesystem.list` READ intégré au Core
+et au prompt, autorisation par le Policy Engine avant accès, workspace fixe
+`~/AIOS-Workspace`, chemins relatifs stricts et liens jamais suivis vérifiés.
+Liste non récursive bornée à 100 entrées, nom/type/taille, troncature, erreurs
+génériques, remplacement concurrent d'un chemin, fermeture des descripteurs,
+absence de lecture du contenu des fichiers, d'écriture ou de commande externe
+testés sur des fichiers temporaires et avec FakeLLMProvider. Aucun vrai LLM
+sollicité, aucune dépendance ajoutée, aucune configuration des workspaces ni
+étape suivante implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -379,8 +393,8 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Simple-AIOS V0.2
 
-Toutes les étapes ci-dessous restent `[todo]`. Cette roadmap décrit des
-fonctionnalités futures ; leur ajout au document ne les implémente pas.
+L'étape 11.1 est terminée ; les autres étapes ci-dessous restent `[todo]`.
+Les étapes à faire décrivent des objectifs, pas des fonctionnalités présentes.
 La V0.2 commence par **11.1 — `filesystem.list`**.
 
 Les contraintes de sécurité s'appliquent dès la première étape concernée :
@@ -390,7 +404,7 @@ l'objet d'une phase ultérieure.
 
 ### Phase 11 — Fichiers
 
-#### [todo] 11.1 — `filesystem.list`
+#### [done] 11.1 — `filesystem.list`
 
 Ajouter un outil READ permettant de lister le contenu d'un dossier autorisé.
 
@@ -402,7 +416,7 @@ Résultat structuré :
 
 Pas de modification du filesystem.
 
-Commit futur :
+Commit :
 `feat: add filesystem listing tool`
 
 #### [todo] 11.2 — `filesystem.read`

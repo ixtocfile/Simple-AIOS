@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import asdict
 import json
 
+from aios.filesystem_list import FilesystemListTool
 from aios.history import TaskHistory
 from aios.llm import LLMProvider, Message
 from aios.policy import PolicyDecision, PolicyEngine
@@ -35,6 +36,7 @@ def build_tool_registry() -> ToolRegistry:
     for tool in (
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
         SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
+        FilesystemListTool(),
     ):
         registry.register(tool)
     return registry
