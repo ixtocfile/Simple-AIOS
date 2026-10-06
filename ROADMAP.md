@@ -1,4 +1,4 @@
-# Roadmap Simple-AIOS — V0.1
+# Roadmap Simple-AIOS — V0.1 et V0.2
 
 Chaque étape représente une modification logique testable et un petit commit.
 Ne réaliser que l'étape demandée. Les étapes futures décrivent des objectifs,
@@ -6,8 +6,9 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : étape 10.3 terminée. La V0.1 est documentée et aucune étape suivante
-n'est définie.
+État : phases 0 à 10 de la V0.1 terminées. La V0.2 est planifiée ci-dessous ;
+aucune de ses étapes n'est commencée. Prochaine étape : 11.1 — `filesystem.list`,
+à réaliser uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -375,3 +376,556 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 - [done] 10.1 — Script d'installation simple.
 - [done] 10.2 — Script de désinstallation.
 - [done] 10.3 — Guide d'installation Ubuntu/Debian.
+
+## Simple-AIOS V0.2
+
+Toutes les étapes ci-dessous restent `[todo]`. Cette roadmap décrit des
+fonctionnalités futures ; leur ajout au document ne les implémente pas.
+La V0.2 commence par **11.1 — `filesystem.list`**.
+
+Les contraintes de sécurité s'appliquent dès la première étape concernée :
+chemins autorisés, sauvegarde avant modification et helper minimal autorisé
+pour toute opération root, même si leur configuration ou leur extension fait
+l'objet d'une phase ultérieure.
+
+### Phase 11 — Fichiers
+
+#### [todo] 11.1 — `filesystem.list`
+
+Ajouter un outil READ permettant de lister le contenu d'un dossier autorisé.
+
+Résultat structuré :
+
+- nom ;
+- type fichier/dossier ;
+- taille si applicable.
+
+Pas de modification du filesystem.
+
+Commit futur :
+`feat: add filesystem listing tool`
+
+#### [todo] 11.2 — `filesystem.read`
+
+Ajouter un outil READ permettant de lire un fichier texte.
+
+Contraintes :
+
+- taille maximale ;
+- UTF-8 ;
+- refus des fichiers non autorisés ;
+- résultat borné pour ne pas envoyer des fichiers énormes au LLM.
+
+Commit futur :
+`feat: add filesystem read tool`
+
+#### [todo] 11.3 — `filesystem.mkdir`
+
+Créer un dossier.
+
+Niveau de risque :
+`CONFIRM`
+
+Validation stricte du chemin.
+
+Commit futur :
+`feat: add directory creation tool`
+
+#### [todo] 11.4 — `filesystem.write`
+
+Créer un nouveau fichier texte.
+
+Niveau :
+`CONFIRM`
+
+Contraintes :
+
+- chemin validé ;
+- contenu borné ;
+- UTF-8 ;
+- refus d'écraser silencieusement un fichier existant.
+
+Commit futur :
+`feat: add file creation tool`
+
+#### [todo] 11.5 — Modification sécurisée d'un fichier
+
+Permettre de modifier un fichier texte existant.
+
+Niveau :
+`CONFIRM`
+
+Créer automatiquement une sauvegarde avant modification.
+
+Commit futur :
+`feat: add safe file update tool`
+
+### Phase 12 — Sécurité filesystem
+
+#### [todo] 12.1 — Workspaces autorisés
+
+Ajouter une configuration définissant les chemins dans lesquels Simple-AIOS peut travailler.
+
+Exemple conceptuel :
+
+```toml
+filesystem_roots = [
+    "~/AIOS-Workspace"
+]
+```
+
+Tout accès en dehors de ces chemins doit être refusé.
+
+Commit futur :
+`feat: restrict filesystem workspaces`
+
+#### [todo] 12.2 — Validation renforcée des chemins
+
+Protéger contre :
+
+- `..` ;
+- traversée de répertoires ;
+- chemins hors workspace ;
+- liens symboliques permettant une sortie du workspace ;
+- chemins ambigus.
+
+Commit futur :
+`feat: harden filesystem path validation`
+
+#### [todo] 12.3 — Limites filesystem
+
+Ajouter des limites configurables ou raisonnables pour :
+
+- taille maximale de lecture ;
+- taille maximale d'écriture ;
+- nombre maximal d'éléments listés.
+
+Commit futur :
+`feat: add filesystem safety limits`
+
+### Phase 13 — Gestion de paquets APT
+
+Limiter cette phase aux systèmes Debian/Ubuntu.
+
+#### [todo] 13.1 — `package.search`
+
+Ajouter un outil READ permettant de rechercher un paquet APT.
+
+Aucune installation.
+
+Commit futur :
+`feat: add apt package search tool`
+
+#### [todo] 13.2 — `package.info`
+
+Permettre de connaître :
+
+- si le paquet existe ;
+- s'il est installé ;
+- version installée ;
+- version candidate si disponible.
+
+READ uniquement.
+
+Commit futur :
+`feat: add apt package info tool`
+
+#### [todo] 13.3 — `package.install`
+
+Installer un ou plusieurs paquets explicitement nommés.
+
+Niveau :
+`CONFIRM`
+
+Interdictions :
+
+- aucun shell arbitraire ;
+- aucun argument brut généré par le LLM ;
+- noms de paquets strictement validés ;
+- utilisation de `subprocess` avec `shell=False`.
+
+Commit futur :
+`feat: add confirmed package installation`
+
+#### [todo] 13.4 — `package.remove`
+
+Désinstaller explicitement un paquet.
+
+Niveau :
+`CONFIRM`
+
+Validation stricte et confirmation explicite.
+
+Ne pas ajouter d'option destructive automatique telle que suppression massive des dépendances sans étape dédiée.
+
+Commit futur :
+`feat: add confirmed package removal`
+
+### Phase 14 — Actions privilégiées
+
+Simple-AIOS et `aiosd` doivent continuer à fonctionner sans privilèges root.
+
+#### [todo] 14.1 — Helper privilégié minimal
+
+Créer un composant distinct permettant uniquement les actions système explicitement prévues nécessitant root.
+
+Il ne doit PAS fournir un shell général.
+
+Commit futur :
+`feat: add privileged action helper`
+
+#### [todo] 14.2 — Allowlist des opérations privilégiées
+
+Le helper doit accepter uniquement des opérations structurées prédéfinies, par exemple :
+
+- installation d'un paquet ;
+- suppression d'un paquet ;
+- éventuellement d'autres opérations ajoutées ultérieurement explicitement.
+
+Tout appel non connu doit être refusé.
+
+Commit futur :
+`feat: restrict privileged operations`
+
+#### [todo] 14.3 — Audit des actions privilégiées
+
+Enregistrer :
+
+- opération ;
+- date ;
+- résultat ;
+- statut ;
+- arguments non sensibles.
+
+Ne jamais journaliser de secret.
+
+Commit futur :
+`feat: audit privileged actions`
+
+### Phase 15 — Processus
+
+#### [todo] 15.1 — `process.info`
+
+Afficher des informations détaillées sur un PID :
+
+- PID ;
+- nom ;
+- état ;
+- utilisateur si disponible ;
+- mémoire ;
+- CPU si disponible.
+
+READ uniquement.
+
+Commit futur :
+`feat: add process information tool`
+
+#### [todo] 15.2 — `process.signal`
+
+Permettre dans un premier temps uniquement l'envoi de `SIGTERM`.
+
+Niveau :
+`CONFIRM`
+
+Pas de SIGKILL dans cette première version.
+
+Commit futur :
+`feat: add confirmed process termination`
+
+### Phase 16 — Réseau
+
+#### [todo] 16.1 — `network.interfaces`
+
+Afficher :
+
+- interfaces ;
+- état ;
+- adresses IP ;
+- éventuellement MTU.
+
+READ uniquement.
+
+Commit futur :
+`feat: add network interface tool`
+
+#### [todo] 16.2 — `network.routes`
+
+Afficher les routes IPv4/IPv6 de façon structurée.
+
+READ uniquement.
+
+Commit futur :
+`feat: add network route tool`
+
+#### [todo] 16.3 — `network.dns`
+
+Ajouter des fonctions simples de diagnostic DNS :
+
+- résolution d'un hostname ;
+- affichage du résultat ;
+- erreurs structurées.
+
+READ uniquement.
+
+Commit futur :
+`feat: add dns diagnostic tool`
+
+#### [todo] 16.4 — `network.tcp_check`
+
+Tester la possibilité d'établir une connexion TCP vers :
+
+- un hôte ;
+- un port.
+
+READ uniquement.
+
+Contraintes :
+
+- timeout court ;
+- validation stricte hôte/port ;
+- pas de scan de plage ;
+- pas de scan massif.
+
+Commit futur :
+`feat: add tcp connectivity tool`
+
+### Phase 17 — Docker
+
+Docker reste facultatif.
+
+Simple-AIOS doit continuer à fonctionner sans Docker installé.
+
+#### [todo] 17.1 — `docker.list`
+
+Lister les conteneurs et leur état.
+
+READ uniquement.
+
+Commit futur :
+`feat: add docker container listing`
+
+#### [todo] 17.2 — `docker.logs`
+
+Lire les derniers logs d'un conteneur.
+
+READ uniquement.
+
+Contraintes :
+
+- nombre de lignes borné ;
+- taille maximale ;
+- nom de conteneur validé.
+
+Commit futur :
+`feat: add docker log reading tool`
+
+#### [todo] 17.3 — `docker.restart`
+
+Redémarrer un conteneur explicitement nommé.
+
+Niveau :
+`CONFIRM`
+
+Commit futur :
+`feat: add confirmed docker restart tool`
+
+### Phase 18 — Plans d'exécution
+
+#### [todo] 18.1 — Aperçu du plan
+
+Lorsqu'une demande nécessite plusieurs actions, Simple-AIOS doit pouvoir produire un plan structuré avant exécution.
+
+Exemple :
+
+```text
+1. Vérifier nginx             READ
+2. Installer nginx            CONFIRM
+3. Créer index.html           CONFIRM
+4. Vérifier nginx             READ
+```
+
+Commit futur :
+`feat: add execution plan preview`
+
+#### [todo] 18.2 — Validation du plan
+
+Permettre à l'utilisateur d'approuver explicitement un plan comportant des actions sensibles.
+
+L'approbation globale ne doit jamais permettre de contourner une opération `DENY`.
+
+Le Policy Engine reste autoritaire.
+
+Commit futur :
+`feat: add plan approval workflow`
+
+#### [todo] 18.3 — Résumé d'exécution
+
+Après un plan, afficher :
+
+- actions réussies ;
+- actions échouées ;
+- actions refusées ;
+- actions non exécutées.
+
+Commit futur :
+`feat: add execution summary`
+
+### Phase 19 — Sauvegarde et rollback
+
+#### [todo] 19.1 — Backup avant modification
+
+Avant toute modification d'un fichier existant, créer une sauvegarde contrôlée.
+
+Conserver les métadonnées nécessaires à la restauration.
+
+Commit futur :
+`feat: add file backup before changes`
+
+#### [todo] 19.2 — Rollback de fichier
+
+Ajouter un outil permettant de restaurer une sauvegarde connue.
+
+Niveau :
+`CONFIRM`
+
+Commit futur :
+`feat: add file rollback tool`
+
+#### [todo] 19.3 — Historique des changements système
+
+Étendre l'historique pour distinguer les actions ayant modifié la machine.
+
+Exemples :
+
+- fichier créé ;
+- fichier modifié ;
+- paquet installé ;
+- conteneur redémarré ;
+- service redémarré.
+
+READ pour la consultation.
+
+Commit futur :
+`feat: add system change history`
+
+### Phase 20 — Santé de Simple-AIOS
+
+#### [todo] 20.1 — Commande `/health`
+
+Ajouter une commande locale permettant de vérifier :
+
+- état de `aiosd` ;
+- socket ;
+- SQLite ;
+- configuration ;
+- disponibilité du provider.
+
+Elle ne doit pas modifier le système.
+
+Commit futur :
+`feat: add aios health command`
+
+#### [todo] 20.2 — Santé Ollama
+
+Ajouter un test léger de connexion Ollama.
+
+Utiliser un endpoint simple ne nécessitant pas de génération lorsque possible.
+
+Retourner un diagnostic structuré :
+
+- joignable ;
+- timeout ;
+- erreur HTTP ;
+- indisponible.
+
+Commit futur :
+`feat: add ollama health check`
+
+#### [todo] 20.3 — État du modèle Ollama
+
+Vérifier que le modèle configuré est disponible sur le serveur Ollama.
+
+Ne pas télécharger automatiquement un modèle.
+
+READ uniquement.
+
+Commit futur :
+`feat: add ollama model status`
+
+### Phase 21 — Stabilisation V0.2
+
+#### [todo] 21.1 — Tests d'intégration
+
+Ajouter des scénarios couvrant plusieurs composants ensemble, sans nécessiter :
+
+- root réel ;
+- vrai LLM ;
+- modifications dangereuses de la machine.
+
+Utiliser mocks/fakes lorsque nécessaire.
+
+Couvrir notamment :
+
+- fichiers ;
+- Policy Engine ;
+- paquets ;
+- réseau ;
+- Docker ;
+- plans ;
+- rollback.
+
+Commit futur :
+`test: add v0.2 integration tests`
+
+#### [todo] 21.2 — Documentation
+
+Documenter :
+
+- nouveaux outils ;
+- niveaux de risque ;
+- filesystem roots ;
+- gestion de paquets ;
+- helper privilégié ;
+- Docker ;
+- réseau ;
+- rollback ;
+- `/health`.
+
+Commit futur :
+`docs: document v0.2 tools`
+
+#### [todo] 21.3 — Release V0.2
+
+Préparer la release V0.2 :
+
+- version ;
+- changelog ;
+- documentation ;
+- validation des tests ;
+- vérification installation/désinstallation.
+
+Commit futur :
+`chore: prepare v0.2 release`
+
+### Principes obligatoires pour toute la V0.2
+
+Ces règles s’appliquent à toutes les étapes de la V0.2 :
+
+1. Une étape = une petite modification logique et testable.
+2. Ne jamais commencer automatiquement l'étape suivante.
+3. Aucun shell arbitraire accessible au LLM.
+4. Utiliser `subprocess` avec `shell=False` lorsque nécessaire.
+5. Tous les arguments venant du LLM doivent être validés.
+6. Le Policy Engine reste indépendant du LLM.
+7. READ peut être automatique.
+8. CONFIRM nécessite une autorisation explicite.
+9. DENY ne peut jamais être contourné par le modèle.
+10. Les opérations root passent uniquement par un helper minimal explicitement autorisé.
+11. Les tests ne doivent pas effectuer de modification dangereuse réelle.
+12. Les tests ne doivent pas nécessiter un vrai LLM.
+13. Ne jamais stocker ou journaliser volontairement de secrets.
+14. Privilégier la bibliothèque standard Python.
+15. Éviter toute nouvelle dépendance sans nécessité claire.
+16. Docker doit rester facultatif.
+17. Ubuntu/Debian restent les plateformes principales.
+18. Toujours conserver un état Git fonctionnel entre les étapes.
