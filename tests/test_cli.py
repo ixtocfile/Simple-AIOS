@@ -450,14 +450,14 @@ def test_cli_mkdir_requires_explicit_terminal_confirmation(
     assert len(provider.calls) == 2
     assert json.loads(provider.calls[1][-1]["content"]) == {"tool_result": {
         "tool": "filesystem.mkdir", "success": allowed,
-        "data": {"path": "notes", "created": True} if allowed else None,
+        "data": {"workspace": str(workspace), "path": "notes", "created": True} if allowed else None,
         "error": None if allowed else "Tool execution denied",
     }}
     assert (workspace / "notes").is_dir() is allowed
     captured = capsys.readouterr()
     assert captured.out.count("Action à confirmer") == int(interactive)
     if interactive:
-        assert '"outil": "filesystem.mkdir", "arguments": {"path": "notes"}' in captured.out
+        assert json.dumps({"outil": "filesystem.mkdir", "arguments": {"path": "notes", "workspace": str(workspace)}}) in captured.out
     if not allowed:
         assert "Action refusée." in captured.out
     assert captured.err == ""
@@ -482,7 +482,7 @@ def test_cli_write_previews_content_and_requires_explicit_confirmation(
     assert cli_session(provider, entries) == 0
     assert json.loads(provider.calls[1][-1]["content"]) == {"tool_result": {
         "tool": "filesystem.write", "success": allowed,
-        "data": {"path": "notes.txt", "created": True, "size_bytes": 13} if allowed else None,
+        "data": {"workspace": str(workspace), "path": "notes.txt", "created": True, "size_bytes": 13} if allowed else None,
         "error": None if allowed else "Tool execution denied",
     }}
     assert (workspace / "notes.txt").exists() is allowed
@@ -493,7 +493,7 @@ def test_cli_write_previews_content_and_requires_explicit_confirmation(
                 if line.startswith("Action à confirmer : ")]
     assert len(previews) == int(interactive)
     if interactive:
-        assert json.loads(previews[0]) == {"outil": "filesystem.write", "arguments": arguments}
+        assert json.loads(previews[0]) == {"outil": "filesystem.write", "arguments": {**arguments, "workspace": str(workspace)}}
     if not allowed:
         assert "Action refusée." in captured.out
     assert captured.err == ""
@@ -552,7 +552,7 @@ def test_cli_update_previews_content_and_requires_explicit_confirmation(
                 if line.startswith("Action à confirmer : ")]
     assert len(previews) == int(interactive)
     if interactive:
-        assert json.loads(previews[0]) == {"outil": "filesystem.update", "arguments": arguments}
+        assert json.loads(previews[0]) == {"outil": "filesystem.update", "arguments": {**arguments, "workspace": str(workspace)}}
     if not allowed:
         assert "Action refusée." in captured.out
     assert captured.err == ""

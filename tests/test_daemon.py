@@ -56,7 +56,7 @@ def execute(name, arguments):
     return ToolResult(success=True, data={"observed": name})
 for tool in registry.list_tools():
     tool._execute = lambda arguments, name=tool.name: execute(name, arguments)
-core.build_tool_registry = lambda: registry
+core.build_tool_registry = lambda **kwargs: registry
 daemon.CLIENT_TIMEOUT = options.get("timeout", 30.0)
 if options.get("storage_error"):
     daemon.TaskHistory.start = Mock(side_effect=sqlite3.OperationalError("token=private-storage-detail"))

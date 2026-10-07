@@ -62,7 +62,10 @@ def _read_request(connection, stream):
     return first + stream.readline(MAX_REQUEST_BYTES)
 
 
-def _handle_client(connection: socket.socket, provider: LLMProvider, history: TaskHistory) -> None:
+def _handle_client(
+    connection: socket.socket, provider: LLMProvider, history: TaskHistory, *,
+    filesystem_roots: tuple[Path, ...] | None = None,
+) -> None:
     with connection.makefile("rb") as stream:
         enabled = False
         broken = False
@@ -90,7 +93,7 @@ def _handle_client(connection: socket.socket, provider: LLMProvider, history: Ta
                 broken = True
                 return False
 
-        core = Core(provider, history, permission_handler=authorize)
+        core = Core(provider, history, permission_handler=authorize, filesystem_roots=filesystem_roots)
         while True:
             try:
                 raw = _read_request(connection, stream)
@@ -155,13 +158,16 @@ def _listener(socket_path: Path):
                     pass
 
 
-def serve(socket_path: Path, provider: LLMProvider, history: TaskHistory) -> None:
+def serve(
+    socket_path: Path, provider: LLMProvider, history: TaskHistory, *,
+    filesystem_roots: tuple[Path, ...] | None = None,
+) -> None:
     """Serve one session per connection; the caller owns provider and history."""
     with _listener(socket_path) as listener:
         while True:
             connection, _ = listener.accept()
             with connection:
-                _handle_client(connection, provider, history)
+                _handle_client(connection, provider, history, filesystem_roots=filesystem_roots)
 
 
 def _interrupt(signum, frame):
@@ -190,7 +196,8 @@ def main(argv: list[str] | None = None) -> int:
             print('Provider LLM non pris en charge. Utilisez provider = "ollama".', file=sys.stderr)
             return 1
         with closing(TaskHistory(config.data_dir)) as history:
-            serve(args.socket or config.data_dir / "aiosd.sock", OllamaProvider(config), history)
+            serve(args.socket or config.data_dir / "aiosd.sock", OllamaProvider(config), history,
+                  filesystem_roots=config.filesystem_roots)
     except KeyboardInterrupt:
         pass
     except Exception as error:

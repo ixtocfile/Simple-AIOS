@@ -35,7 +35,7 @@ def test_creates_exact_utf8_content_and_reports_byte_size(workspace, tmp_path, m
     result = FilesystemWriteTool().execute(arguments, authorize=lambda _: True)
     raw = content.encode("utf-8")
     assert result == ToolResult(success=True, data={
-        "path": arguments["path"], "created": True, "size_bytes": len(raw),
+        "workspace": str(workspace), "path": arguments["path"], "created": True, "size_bytes": len(raw),
     })
     assert json.loads(json.dumps(asdict(result))) == asdict(result)
     assert (workspace / arguments["path"]).read_bytes() == raw
@@ -159,7 +159,7 @@ def test_confirmation_cannot_modify_the_validated_path_or_content(workspace, mon
 
     def authorize(preview):
         opened.assert_not_called()
-        assert preview == arguments
+        assert preview == {**arguments, "workspace": str(workspace)}
         preview.update(path="../outside", content="changed")
         return True
 
@@ -415,7 +415,7 @@ def test_core_masks_content_before_validation_and_preserves_confirmation_and_res
         assert saved["result"] == {key: value for key, value in result.items() if key != "tool"}
         assert saved["status"] == ("succeeded" if scenario == "success" else "failed")
     if scenario == "success":
-        assert result["data"] == {"path": "notes", "created": True, "size_bytes": len(content)}
+        assert result["data"] == {"workspace": str(workspace), "path": "notes", "created": True, "size_bytes": len(content)}
         assert result["success"] is True and result["error"] is None
         assert (workspace / "notes").read_text() == content
     else:
@@ -430,7 +430,7 @@ def test_core_masks_content_before_validation_and_preserves_confirmation_and_res
             handler.assert_not_called()
         else:
             decision = PolicyDecision.DENY if scenario == "deny" else PolicyDecision.CONFIRM
-            handler.assert_called_once_with(decision, "filesystem.write", arguments)
+            handler.assert_called_once_with(decision, "filesystem.write", {**arguments, "workspace": str(workspace)})
     assert provider.calls[1][-2] == {"role": "assistant", "content": reply}
     assert all(content not in statement for statement in statements)
     assert content.encode() not in (tmp_path / "data/history.sqlite3").read_bytes()

@@ -6,7 +6,7 @@ import tomllib
 
 import pytest
 
-from aios.config import load_config
+from aios.config import Config, load_config
 
 
 def test_defaults_do_not_create_data_directory(tmp_path, monkeypatch):
@@ -19,6 +19,8 @@ def test_defaults_do_not_create_data_directory(tmp_path, monkeypatch):
     assert config.ollama_url == "http://127.0.0.1:11434"
     assert config.data_dir == tmp_path / ".local/share/simple-aios"
     assert config.log_level == "INFO"
+    assert config.filesystem_roots == (tmp_path / "AIOS-Workspace",)
+    assert not config.filesystem_roots[0].exists()
     assert not config.data_dir.exists()
 
 
@@ -106,3 +108,54 @@ def test_malformed_toml(tmp_path):
 def test_explicit_missing_file_is_not_silently_ignored(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_config(tmp_path / "missing.toml")
+
+
+def test_filesystem_roots_replace_default_expand_home_and_keep_order(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    path = tmp_path / "settings.toml"
+    path.write_text('filesystem_roots = ["~/travail", "/srv/aios partagé"]\n')
+    blocked = lambda *_args, **_kwargs: pytest.fail("No root lookup or creation while loading config")
+    for method in ("resolve", "mkdir", "stat"):
+        monkeypatch.setattr(Path, method, blocked)
+    config = load_config(path)
+    assert config.filesystem_roots == (tmp_path / "travail", Path("/srv/aios partagé"))
+    assert tmp_path / "AIOS-Workspace" not in config.filesystem_roots
+
+
+def test_empty_filesystem_roots_disable_access_without_restoring_default(tmp_path):
+    path = tmp_path / "settings.toml"
+    path.write_text("filesystem_roots = []\n")
+    assert load_config(path).filesystem_roots == ()
+    assert Config(filesystem_roots=[]).filesystem_roots == ()
+
+
+def test_python_config_copies_roots_and_remains_immutable(tmp_path):
+    roots = [tmp_path / "first"]
+    config = Config(filesystem_roots=roots)
+    roots.append(tmp_path / "second")
+    assert config.filesystem_roots == (tmp_path / "first",)
+    with pytest.raises(AttributeError):
+        config.filesystem_roots = ()
+
+
+@pytest.mark.parametrize("value", [
+    '"~/workspace"', 'true', '42', '{}', '[true]', '[42]', '[[]]', '[{}]', '[""]', '["  "]',
+    '["relative"]', '["~someone/workspace"]', '["/tmp/../workspace"]', '["/tmp/./workspace"]',
+    '["/tmp//workspace"]', '["/tmp/workspace/"]', '["//tmp/workspace"]', '["/."]', '["~/."]',
+    '["~/"]', '["/tmp/w\\nork"]', '["/tmp/w\\u0000ork"]', '["/tmp/w\\u007fork"]',
+    '["/tmp/a\\\\b"]', '["/tmp/a", "/tmp/a"]',
+])
+def test_invalid_filesystem_roots_are_rejected(tmp_path, value):
+    path = tmp_path / "invalid.toml"
+    path.write_text("filesystem_roots = " + value + "\n")
+    with pytest.raises(ValueError):
+        load_config(path)
+
+
+def test_duplicate_expanded_roots_and_invalid_direct_config_are_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    with pytest.raises(ValueError, match="duplicates"):
+        Config(filesystem_roots=["~/workspace", tmp_path / "workspace"])
+    for values in (None, str(tmp_path), [True], ["../outside"], ["/bad\ud800"]):
+        with pytest.raises(ValueError):
+            Config(filesystem_roots=values)

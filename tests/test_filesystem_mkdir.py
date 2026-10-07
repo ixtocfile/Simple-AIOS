@@ -32,7 +32,7 @@ def test_creates_only_the_requested_empty_directory(workspace, tmp_path, monkeyp
     monkeypatch.chdir(tmp_path)
     arguments = {"path": path}
     result = FilesystemMkdirTool().execute(arguments, authorize=lambda _: True)
-    assert result == ToolResult(success=True, data={"path": path, "created": True})
+    assert result == ToolResult(success=True, data={"workspace": str(workspace), "path": path, "created": True})
     assert set(workspace.rglob("*")) == before | {workspace / path}
     assert list((workspace / path).iterdir()) == []
     assert (workspace / path).stat().st_mode & 0o077 == 0
@@ -63,7 +63,7 @@ def test_authorization_precedes_access_and_cannot_change_the_target(workspace, m
     def authorize(arguments):
         opened.assert_not_called()
         mkdir.assert_not_called()
-        assert arguments == {"path": "notes"}
+        assert arguments == {"path": "notes", "workspace": str(workspace)}
         arguments["path"] = "../outside"
         return True
 
@@ -323,7 +323,7 @@ def test_core_applies_policy_and_records_real_result(
         result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
         assert result == {
             "tool": "filesystem.mkdir", "success": allowed,
-            "data": {"path": "notes", "created": True} if allowed else None,
+            "data": {"workspace": str(workspace), "path": "notes", "created": True} if allowed else None,
             "error": None if allowed else "Tool execution denied",
         }
         saved = history.recent()[0]["tools"][0]
@@ -332,7 +332,7 @@ def test_core_applies_policy_and_records_real_result(
         assert saved["result"] == {key: value for key, value in result.items() if key != "tool"}
     if handler is not None:
         decision = PolicyDecision.DENY if risk is RiskLevel.DENY else PolicyDecision.CONFIRM
-        handler.assert_called_once_with(decision, "filesystem.mkdir", {"path": "notes"})
+        handler.assert_called_once_with(decision, "filesystem.mkdir", {"path": "notes", "workspace": str(workspace)})
     assert execution.call_count == int(allowed)
     assert (workspace / "notes").is_dir() is allowed
     assert not caplog.records

@@ -3,7 +3,9 @@
 from collections.abc import Callable
 from dataclasses import asdict
 import json
+from pathlib import Path
 
+from aios._filesystem import normalize_filesystem_roots
 from aios.filesystem_list import FilesystemListTool
 from aios.filesystem_mkdir import FilesystemMkdirTool
 from aios.filesystem_read import FilesystemReadTool
@@ -16,7 +18,7 @@ from aios.process_list import ProcessListTool
 from aios.system_disk import SystemDiskTool
 from aios.system_info import SystemInfoTool
 from aios.system_memory import SystemMemoryTool
-from aios.system_prompt import SYSTEM_PROMPT
+from aios.system_prompt import build_system_prompt
 from aios.systemd_list import SystemdListTool
 from aios.systemd_restart import SystemdRestartTool
 from aios.systemd_status import SystemdStatusTool
@@ -35,13 +37,16 @@ DIAGNOSTIC_CALLS = (
 PermissionHandler = Callable[[PolicyDecision, str, dict[str, object]], bool]
 
 
-def build_tool_registry() -> ToolRegistry:
+def build_tool_registry(*, filesystem_roots: tuple[Path, ...] | None = None) -> ToolRegistry:
     registry = ToolRegistry()
     for tool in (
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
         SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
-        FilesystemListTool(), FilesystemReadTool(), FilesystemMkdirTool(), FilesystemWriteTool(),
-        FilesystemUpdateTool(),
+        FilesystemListTool(filesystem_roots=filesystem_roots),
+        FilesystemReadTool(filesystem_roots=filesystem_roots),
+        FilesystemMkdirTool(filesystem_roots=filesystem_roots),
+        FilesystemWriteTool(filesystem_roots=filesystem_roots),
+        FilesystemUpdateTool(filesystem_roots=filesystem_roots),
     ):
         registry.register(tool)
     return registry
@@ -54,13 +59,17 @@ class Core:
         self, provider: LLMProvider, history: TaskHistory, *,
         registry: ToolRegistry | None = None,
         permission_handler: PermissionHandler | None = None,
+        filesystem_roots: tuple[Path, ...] | None = None,
     ) -> None:
         self._provider = provider
         self._history = history
-        self._registry = registry if registry is not None else build_tool_registry()
+        roots = None if filesystem_roots is None else normalize_filesystem_roots(filesystem_roots)
+        self._registry = registry
+        if self._registry is None:
+            self._registry = build_tool_registry() if roots is None else build_tool_registry(filesystem_roots=roots)
         self._policy = PolicyEngine(self._registry)
         self._permission_handler = permission_handler
-        self._messages: list[Message] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self._messages: list[Message] = [{"role": "system", "content": build_system_prompt(roots)}]
 
     def chat(self, text: str) -> str:
         """Process a message; return the reply or propagate the original error."""

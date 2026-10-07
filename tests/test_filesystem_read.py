@@ -34,7 +34,7 @@ def test_reads_complete_utf8_preserving_newlines_and_byte_size(workspace, tmp_pa
     arguments = {"path": "dossier été/notes.txt"}
     result = FilesystemReadTool().execute(arguments)
     assert result == ToolResult(success=True, data={
-        "path": arguments["path"], "content": content, "size_bytes": len(raw),
+        "workspace": str(workspace), "path": arguments["path"], "content": content, "size_bytes": len(raw),
     })
     assert json.loads(json.dumps(asdict(result))) == asdict(result)
     assert arguments == {"path": "dossier été/notes.txt"}
@@ -296,7 +296,7 @@ def test_core_enforces_policy_and_keeps_content_out_of_sqlite(
         saved = history.recent()[0]["tools"][0]["result"]
         assert result["error"] == error and result["success"] is (error is None)
         if error is None:
-            assert result["data"] == {"path": "note", "content": content, "size_bytes": len(content)}
+            assert result["data"] == {"workspace": str(workspace), "path": "note", "content": content, "size_bytes": len(content)}
             assert saved["data"] == {
                 **result["data"], "content": "[contenu du fichier non conservé]",
             }

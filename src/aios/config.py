@@ -5,6 +5,8 @@ from pathlib import Path
 import tomllib
 from urllib.parse import urlsplit
 
+from aios._filesystem import default_filesystem_roots, normalize_filesystem_roots
+
 
 @dataclass(frozen=True)
 class Config:
@@ -15,6 +17,10 @@ class Config:
         default_factory=lambda: Path.home() / ".local" / "share" / "simple-aios"
     )
     log_level: str = "INFO"
+    filesystem_roots: tuple[Path, ...] = field(default_factory=default_filesystem_roots)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "filesystem_roots", normalize_filesystem_roots(self.filesystem_roots))
 
 
 def load_config(path: str | Path | None = None) -> Config:
@@ -33,6 +39,10 @@ def load_config(path: str | Path | None = None) -> Config:
     if unknown:
         raise ValueError(f"Unknown configuration keys: {', '.join(sorted(unknown))}")
     for key, value in values.items():
+        if key == "filesystem_roots":
+            if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+                raise ValueError("filesystem_roots must be a list of strings")
+            continue
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{key} must be a non-empty string")
 

@@ -162,11 +162,16 @@ commandes shell proposées par le modèle ne sont jamais exécutées.
 
 ## Core et terminal
 
-`aios.core.Core(provider, history, *, registry=None, permission_handler=None)`
+`aios.core.Core(provider, history, *, registry=None, permission_handler=None, filesystem_roots=None)`
 porte une session synchrone indépendante du terminal. Il conserve le contexte,
 valide les appels, applique la policy et la limite de cinq tentatives, exécute
 les outils autorisés et enregistre tâches et résultats dans l'historique.
 Par défaut, `build_tool_registry()` fournit les douze outils existants.
+Le paramètre `filesystem_roots` transmet une liste de racines de confiance aux
+cinq outils fichiers et au prompt ; `build_tool_registry(filesystem_roots=...)`
+permet aussi de construire ce registre explicitement. `None` conserve le défaut,
+un tuple vide désactive les outils fichiers. Un registre personnalisé reste sous
+la responsabilité du code Python de confiance qui le fournit.
 
 - `chat(text)` traite un message non vide et renvoie la réponse textuelle.
 - `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
@@ -343,7 +348,8 @@ pas SQLite et ne lance pas automatiquement `aiosd`.
 Les deux programmes acceptent `--config FILE` et `--socket PATH`. Utilisez le
 même chemin de socket ; sans `--socket`, il est déduit du `data_dir` de chaque
 processus. Le CLI utilise aussi son `log_level`, mais seule la configuration
-chargée par `aiosd` choisit le provider, le modèle, l'URL Ollama et la base SQLite.
+chargée par `aiosd` choisit le provider, le modèle, l'URL Ollama, la base SQLite
+et les workspaces autorisés.
 Modifier le fichier du CLI ne reconfigure pas un daemon déjà démarré.
 
 Une connexion absente, refusée, perdue ou une réponse invalide produit une
@@ -548,7 +554,9 @@ retrouvent leur budget habituel et leurs contrôles de permissions.
 ## Prompt système
 
 `aios.system_prompt.SYSTEM_PROMPT` définit les consignes fixes de Simple-AIOS.
-Le Core initialise chaque session avec ce texte dans un message de rôle `system`,
+`build_system_prompt(filesystem_roots)` y ajoute la liste effective des racines
+du daemon, sous forme de données JSON échappées. Le Core initialise chaque
+session avec ce texte dans un message de rôle `system`,
 placé avant la première demande utilisateur. Ce message est conservé une seule
 fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
@@ -582,7 +590,7 @@ imposées par le Core.
 
 L'étape 1.1 fournit `aios.config.load_config`, avec TOML et la bibliothèque
 standard Python. Sans argument, le chargeur renvoie les valeurs par défaut.
-Un fichier explicite peut remplacer tout ou partie des cinq paramètres :
+Un fichier explicite peut remplacer tout ou partie des paramètres :
 
 ```toml
 provider = "ollama"
@@ -590,6 +598,7 @@ model = "qwen3"
 ollama_url = "http://127.0.0.1:11434"
 data_dir = "~/.local/share/simple-aios"
 log_level = "INFO"
+filesystem_roots = ["~/AIOS-Workspace"]
 ```
 
 Exemple d'utilisation après installation du package :
@@ -601,12 +610,18 @@ defaults = load_config()
 config = load_config("config/example.toml")
 ```
 
-Les clés inconnues, les valeurs vides ou de type incorrect, les URL non HTTP(S)
+Les clés inconnues, les chaînes vides ou de type incorrect, les URL non HTTP(S)
 ou invalides et les niveaux de logs invalides sont refusés. Les niveaux acceptés
 sont DEBUG, INFO, WARNING, ERROR, CRITICAL et NOTSET, sans distinction de casse.
 Un fichier explicite absent, illisible ou mal formé produit une exception.
 `data_dir` devient un `Path` : `~` est développé ; un chemin relatif reste relatif
 au répertoire de travail. Aucun répertoire n'est créé par le chargement.
+`filesystem_roots` est une liste de chemins absolus ou commençant par `~/`
+(`~` seul désigne le répertoire personnel). Elle devient un tuple immuable de
+`Path` absolus, sans résolution de lien ni accès à ces dossiers. Les doublons
+après expansion, chemins relatifs, composants `.`/`..` ou vides, antislashs et
+caractères de contrôle sont refusés. Une liste vide est acceptée pour désactiver
+les outils fichiers ; omettre la clé conserve le workspace par défaut.
 
 Le CLI utilise les valeurs par défaut, ou un fichier TOML fourni explicitement :
 
@@ -1206,10 +1221,58 @@ ne permet pas de conclure à l'annulation du job côté systemd. L'outil ne rée
 pas et ne lance aucune commande de remplacement. Les tests simulent tous les
 redémarrages et utilisent FakeLLMProvider ; aucun service réel n'est redémarré.
 
+## Workspaces autorisés
+
+La configuration `filesystem_roots` chargée au démarrage de **`aiosd`** définit
+les seules racines accessibles aux cinq outils `filesystem.*`. Une liste
+personnalisée remplace entièrement le défaut `~/AIOS-Workspace` : elle ne
+l'ajoute pas implicitement. Exemple :
+
+```toml
+filesystem_roots = ["~/AIOS-Workspace", "/srv/aios-partage"]
+```
+
+Les dossiers doivent déjà exister et être accessibles au compte du daemon,
+sans lien symbolique dans leur chemin. Le chargement ne les crée pas et ne
+modifie pas leurs permissions. Une racine absente ou inaccessible échoue lors
+de l'appel ; aucun autre dossier n'est essayé en remplacement. Redémarrez le
+daemon après changement du fichier TOML chargé avec `--config` ; modifier
+uniquement la configuration du CLI ne change pas ces autorisations.
+
+Tous les outils fichiers acceptent `workspace` facultatif. Sa valeur doit être
+le chemin absolu **exact** d'une racine configurée, après expansion du tilde.
+Sans cet argument, la première racine est choisie. `path` reste un chemin relatif
+à cette racine. Pour un daemon dont la seconde racine est `/srv/aios-partage` :
+
+```json
+{"tool":"filesystem.read","arguments":{"workspace":"/srv/aios-partage","path":"notes.txt"}}
+```
+
+Un autre chemin, un simple préfixe voisin ou un sous-dossier fourni comme
+`workspace` est refusé avant tout accès et toute confirmation. Pour accéder à
+un sous-dossier autorisé, utilisez `path`. Le modèle ne peut pas modifier
+`filesystem_roots` ni autoriser une nouvelle racine. Les contrôles existants
+sur les chemins et les liens restent appliqués à chaque composant ouvert.
+Avec `filesystem_roots = []`, tous les appels `filesystem.*` sont refusés,
+sans repli vers le répertoire personnel ou courant.
+
+La racine effective est ajoutée aux arguments validés présentés à la
+confirmation et au champ `workspace` de chaque résultat réussi. `path` et
+`backup_path` restent relatifs à cette racine. SQLite conserve les arguments
+demandés filtrés et le résultat contenant la racine effective ; le contenu des
+fichiers reste masqué. Les risques READ/CONFIRM et le refus DENY ne changent pas.
+Cette liste concerne les outils fichiers, pas les fichiers internes du daemon
+(configuration, logs, SQLite, socket) ni les sources des diagnostics système.
+
+Les appels Python de confiance peuvent passer `filesystem_roots=(Path(...), ...)`
+aux outils. L'ancien constructeur `FilesystemReadTool(Path(...))`, et ses
+équivalents pour les autres outils, conserve une seule racine explicite ; les
+deux paramètres ne peuvent pas être combinés.
+
 ## Outil fichiers : filesystem.list
 
 `aios.filesystem_list.FilesystemListTool` liste uniquement le contenu immédiat
-d'un dossier du workspace fixe `~/AIOS-Workspace`, sous le compte exécutant
+d'un dossier d'un workspace autorisé (`~/AIOS-Workspace` par défaut), sous le compte exécutant
 `aiosd`. Il est enregistré dans le Core et décrit au modèle. Son niveau est
 `READ` ; le Policy Engine doit autoriser chaque appel avant tout accès au disque.
 
@@ -1228,7 +1291,7 @@ courant du CLI. Exemple pour un sous-dossier `documents` existant :
 {"tool":"filesystem.list","arguments":{"path":"documents"}}
 ```
 
-Seul `path` est accepté. Le chemin doit être une chaîne UTF-8 non vide d'au plus
+Seuls `path` et `workspace` sont acceptés. Le chemin doit être une chaîne UTF-8 non vide d'au plus
 4096 octets, sans caractère de contrôle, antislash ni composant `..`, vide ou
 `.` (sauf le chemin `"."` lui-même). Les chemins absolus sont refusés. Il n'y a
 ni expansion du tilde, ni glob, ni shell.
@@ -1242,6 +1305,7 @@ ne parcourt pas les sous-dossiers et n'exécute aucune commande externe.
 
 Le résultat `data` contient :
 
+- `workspace` : la racine autorisée sélectionnée, sous forme de chemin absolu ;
 - `path` : le chemin relatif demandé, ou `"."` ;
 - `entries` : une liste de `name`, `type` et `size_bytes` ;
 - `truncated` : vrai lorsqu'il reste des entrées au-delà de la limite.
@@ -1256,17 +1320,17 @@ Un dossier vide renvoie une liste vide et `truncated=false`.
 Un workspace absent, un chemin inexistant, un fichier utilisé comme dossier,
 un lien dans le chemin ou une erreur d'accès produit un échec structuré sans
 données partielles ni détails sensibles dans les erreurs ou les logs.
-La racine et la limite sont fixes à cette étape ; leur configuration reste
-prévue en phase 12. La commande `/diagnose` conserve ses cinq contrôles existants.
+La racine est choisie parmi `filesystem_roots` ; la limite reste fixe.
+La commande `/diagnose` conserve ses cinq contrôles existants.
 
 ## Outil fichiers : filesystem.read
 
-`aios.filesystem_read.FilesystemReadTool` lit un fichier texte UTF-8 du même
-workspace fixe `~/AIOS-Workspace`, sous le compte du daemon. Il est enregistré
+`aios.filesystem_read.FilesystemReadTool` lit un fichier texte UTF-8 d'un
+workspace autorisé, sous le compte du daemon. Il est enregistré
 dans le Core et décrit au modèle, avec le niveau `READ`. Chaque appel du modèle
 passe par la validation et le Policy Engine avant toute lecture.
 
-Le seul argument accepté, obligatoire, est `path` : un chemin relatif soumis
+`path` est obligatoire et `workspace` facultatif. Le chemin relatif est soumis
 aux mêmes règles que `filesystem.list`, sauf que `"."` est refusé. Le workspace
 et le fichier doivent déjà exister. Exemple pour un fichier présent :
 
@@ -1278,6 +1342,7 @@ Le résultat réussi contient dans `data` :
 
 | Champ | Valeur |
 | --- | --- |
+| `workspace` | Racine autorisée sélectionnée, chemin absolu. |
 | `path` | Chemin relatif demandé. |
 | `content` | Texte UTF-8 complet, avec ses tabulations et fins de ligne conservées. |
 | `size_bytes` | Nombre d'octets effectivement lus. |
@@ -1307,12 +1372,12 @@ FakeLLMProvider, sans LLM réel.
 ## Outil fichiers : filesystem.mkdir
 
 `aios.filesystem_mkdir.FilesystemMkdirTool` crée un seul dossier neuf dans
-`~/AIOS-Workspace`, sous le compte du daemon. Son niveau est `CONFIRM` : après
+un workspace autorisé, sous le compte du daemon. Son niveau est `CONFIRM` : après
 validation, le Policy Engine impose un accord explicite `oui` dans un terminal
 interactif. Un accord est nécessaire pour chaque appel. Sans confirmation,
 aucun accès au filesystem n'est effectué par l'outil.
 
-Le seul argument accepté, obligatoire, est `path`. Le chemin est relatif au
+`path` est obligatoire et `workspace` facultatif. Le chemin est relatif au
 workspace, UTF-8, d'au plus 4096 octets, avec les mêmes restrictions que les
 outils de lecture : pas de chemin absolu, de traversée `..`, de composant vide
 ou `.`, d'antislash ni de contrôle ASCII. Le chemin `"."` est également refusé.
@@ -1335,7 +1400,7 @@ demandées sont `0700`, réduites par l'umask du processus. Aucune commande exte
 élévation de privilèges, modification des permissions existantes ou tentative
 de remplacement n'est effectuée.
 
-Un succès contient `{"path":"documents/nouveau-dossier","created":true}` dans
+Un succès contient `workspace`, `path` et `created: true` dans
 `data`. Un argument invalide produit `Invalid tool arguments`, une absence ou
 un refus d'autorisation `Tool execution denied`. Une destination existante,
 un parent absent, un lien dans les parents ou une erreur système produit
@@ -1350,14 +1415,14 @@ Les tests créent uniquement des dossiers temporaires, avec FakeLLMProvider.
 ## Outil fichiers : filesystem.write
 
 `aios.filesystem_write.FilesystemWriteTool` crée un nouveau fichier texte dans
-le workspace fixe `~/AIOS-Workspace`, sous le compte du daemon. Son niveau est
+un workspace autorisé, sous le compte du daemon. Son niveau est
 `CONFIRM`. Les arguments sont validés avant la décision du Policy Engine ; le
 CLI présente le chemin et le contenu, puis exige `oui` dans un terminal
 interactif. Chaque appel nécessite un nouvel accord. Sans autorisation, l'outil
 n'accède pas au filesystem, y compris lors d'un appel Python direct sans
 fonction `authorize`.
 
-Les deux seuls arguments acceptés sont obligatoires :
+Deux arguments sont obligatoires ; `workspace` est facultatif :
 
 | Argument | Valeur |
 | --- | --- |
@@ -1388,7 +1453,7 @@ fichier existant, ni shell, ni élévation de privilèges. Les écritures utilis
 le descripteur du fichier créé, même si son nom est remplacé simultanément.
 
 Le succès est renvoyé après l'écriture de tous les octets et la fermeture du
-fichier. `data` contient `path`, `created: true` et `size_bytes`, sans recopier
+fichier. `data` contient `workspace`, `path`, `created: true` et `size_bytes`, sans recopier
 le contenu. Les écritures courtes sont complétées. Un argument invalide produit
 `Invalid tool arguments`, un refus `Tool execution denied` et un échec
 d'ouverture, notamment une destination existante, `Tool execution failed`.
@@ -1408,13 +1473,14 @@ Les tests utilisent des fichiers temporaires et FakeLLMProvider.
 ## Outil fichiers : filesystem.update
 
 `aios.filesystem_update.FilesystemUpdateTool` remplace tout le contenu d'un
-fichier texte existant dans `~/AIOS-Workspace`. Il est classé `CONFIRM` : le CLI
+fichier texte existant dans un workspace autorisé. Il est classé `CONFIRM` : le CLI
 présente le chemin et le nouveau contenu, puis exige `oui` dans un terminal
 interactif à chaque appel. Aucun accès au fichier ni aucune sauvegarde ne sont
 effectués sans autorisation, y compris lors d'un appel Python direct.
 
-Les deux arguments obligatoires sont `path` et `content`, avec les mêmes
-contrôles que `filesystem.write`. Le chemin est relatif au workspace existant,
+Les deux arguments obligatoires sont `path` et `content` ; `workspace` est
+facultatif. Les contrôles sont les mêmes que pour `filesystem.write`.
+Le chemin est relatif au workspace existant,
 ses parents doivent déjà exister et aucun lien symbolique n'est suivi. Les
 composants commençant par `.aios-update-` sont réservés aux sauvegardes et
 refusés comme cibles. L'ancien et le nouveau contenu doivent chacun être du
@@ -1457,10 +1523,11 @@ simultané ; il ne fournit pas de verrou exclusif contre les programmes externes
 Les descripteurs restent attachés aux dossiers ouverts si leurs noms sont
 déplacés ; aucun chemin de remplacement n'est suivi vers un autre dossier.
 
-Après remplacement et synchronisation des répertoires, le résultat contient :
+Après remplacement et synchronisation des répertoires, le résultat contient,
+par exemple pour la racine autorisée `/srv/aios-partage` :
 
 ```json
-{"path":"documents/notes.txt","updated":true,"size_bytes":14,"backup_path":"documents/.aios-update-<identifiant>/backup.txt"}
+{"workspace":"/srv/aios-partage","path":"documents/notes.txt","updated":true,"size_bytes":14,"backup_path":"documents/.aios-update-<identifiant>/backup.txt"}
 ```
 
 `backup_path` est relatif au workspace. Chaque appel crée une sauvegarde distincte,

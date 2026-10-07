@@ -2,12 +2,11 @@
 
 from collections.abc import Callable
 import os
-from pathlib import Path
 import stat
 from uuid import uuid4
 
-from aios._filesystem import encode_text, open_directory, validate_relative_path, workspace_path
-from aios.tools import RiskLevel, Tool, ToolResult
+from aios._filesystem import encode_text, open_directory, validate_relative_path, FilesystemTool
+from aios.tools import RiskLevel, ToolResult
 
 
 MAX_UPDATE_BYTES = 64 * 1024
@@ -78,13 +77,10 @@ def _write_copy(
         os.close(descriptor)
 
 
-class FilesystemUpdateTool(Tool):
+class FilesystemUpdateTool(FilesystemTool):
     name = "filesystem.update"
-    description = "Replace an existing UTF-8 file of at most 64 KiB in ~/AIOS-Workspace after confirmation and backup."
+    description = "Replace an existing UTF-8 file of at most 64 KiB in an authorized workspace after confirmation and backup."
     risk_level = RiskLevel.CONFIRM
-
-    def __init__(self, workspace: Path | None = None) -> None:
-        self._workspace = workspace_path(workspace)
 
     def execute(
         self, arguments: dict[str, object], *,
@@ -95,12 +91,13 @@ class FilesystemUpdateTool(Tool):
         return super().execute(arguments, authorize=authorize)
 
     def validate_arguments(self, arguments: dict[str, object]) -> None:
-        if arguments.keys() != {"path", "content"}:
-            raise ValueError("Only the required path and content are accepted")
+        if arguments.keys() not in ({"path", "content"}, {"path", "content", "workspace"}):
+            raise ValueError("path and content are required; only workspace is optional")
         path = validate_relative_path(arguments["path"])
         if path == "." or any(part.startswith(BACKUP_PREFIX) for part in path.split("/")):
             raise ValueError("path must identify a file outside the tool's backups")
         encode_text(arguments["content"], MAX_UPDATE_BYTES)
+        self.validate_workspace(arguments)
         arguments["path"] = path
 
     def _execute(self, arguments: dict[str, object]) -> ToolResult:
@@ -109,7 +106,7 @@ class FilesystemUpdateTool(Tool):
         parent, _, name = path.rpartition("/")
         replacing = False
         try:
-            with open_directory(self._workspace, parent or ".") as directory:
+            with open_directory(self.workspace_for(arguments), parent or ".") as directory:
                 original, previous = _read_original(directory, name)
                 backup_name = BACKUP_PREFIX + uuid4().hex
                 os.mkdir(backup_name, mode=0o700, dir_fd=directory)
@@ -146,6 +143,6 @@ class FilesystemUpdateTool(Tool):
         # Keep backups (and any incomplete preparation on failure); never unlink by path.
         backup_path = f"{parent}/" if parent else ""
         return ToolResult(success=True, data={
-            "path": path, "updated": True, "size_bytes": len(data),
+            "workspace": arguments["workspace"], "path": path, "updated": True, "size_bytes": len(data),
             "backup_path": f"{backup_path}{backup_name}/backup.txt",
         })

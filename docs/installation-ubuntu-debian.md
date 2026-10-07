@@ -151,6 +151,7 @@ model = "qwen3"
 ollama_url = "http://127.0.0.1:11434"
 data_dir = "~/.local/share/simple-aios"
 log_level = "INFO"
+filesystem_roots = ["~/AIOS-Workspace"]
 ```
 
 Pour créer un fichier personnel en conservant un éventuel fichier existant :
@@ -168,6 +169,10 @@ doit correspondre à un modèle disponible sur le serveur choisi. Aucun fichier
 TOML n'est chargé automatiquement. Utilisez un `data_dir` absolu ou commençant
 par `~/` : le service travaille depuis le répertoire personnel, alors que le
 CLI utilise le répertoire courant pour les chemins relatifs.
+`filesystem_roots` définit les dossiers autorisés pour les outils fichiers.
+Utilisez des chemins absolus ou commençant par `~/` et préparez vous-même ces
+dossiers avec les permissions voulues. La liste remplace le défaut ; `[]`
+désactive les outils fichiers. Aucun dossier n'est créé par le chargement.
 
 Pour appliquer ce fichier au service de ce guide :
 
@@ -193,7 +198,7 @@ cd "$HOME/Simple-AIOS"
 .venv/bin/python -m aios --config "$HOME/.config/simple-aios/config.toml"
 ```
 
-Le daemon choisit le modèle et l'URL Ollama ; configurer seulement le CLI ne
+Le daemon choisit le modèle, l'URL Ollama et les workspaces autorisés ; configurer seulement le CLI ne
 reconfigure pas le daemon. Les deux doivent joindre le même socket, par défaut
 `<data_dir>/aiosd.sock`. Ils acceptent aussi `--socket PATH` si un chemin explicite
 est nécessaire. Une surcharge systemd constitue une personnalisation que le

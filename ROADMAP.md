@@ -6,8 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 à 11.5 de la V0.2 terminées.
-Prochaine étape : 12.1 — Workspaces autorisés, uniquement sur demande.
+État : phases 0 à 10 de la V0.1 terminées. Phase 11 et étape 12.1 de la V0.2 terminées.
+Prochaine étape : 12.2 — Validation renforcée des chemins, uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -391,6 +391,25 @@ face aux écrivains externes et les préparations laissées sur erreur sont
 documentées. Aucun shell, privilège supplémentaire, dépendance, configuration
 de workspaces ni rollback ajouté ; aucune étape suivante implémentée.
 
+Validation de l'étape 12.1 sous Python 3.12 : installation éditable réussie.
+Les tests ciblés configuration, filesystem, CLI, prompt, Core et historique
+d'outils donnent 720 réussites, dont 143 nouveaux tests. `python -m pytest -q` :
+1364 réussites et 57 échecs liés aux sockets Unix interdits par l'environnement,
+comme aux étapes précédentes ; aucun test supprimé ou ignoré. Les six
+avertissements concernent le nettoyage de dossiers temporaires de tests précédents.
+Configuration TOML `filesystem_roots`, défaut `~/AIOS-Workspace`, expansion du
+tilde, validation et copie immuable des racines, remplacement complet du défaut
+et désactivation par liste vide testés. Les cinq outils `filesystem.*` partagent
+la liste autorisée ; `workspace` facultatif sélectionne une racine exacte,
+le premier dossier servant de défaut. Refus des racines non listées, préfixes
+voisins, chemins invalides et liens, absence de repli ou de création automatique,
+racine effective dans les confirmations et résultats, sauvegarde dans le
+workspace choisi, policy et masquage SQLite vérifiés avec fichiers temporaires
+et FakeLLMProvider. La transmission de la configuration depuis l'entrée daemon
+jusqu'aux outils et au prompt est couverte avec un transport en mémoire, sans
+remplacer les tests existants sur sockets réels. Aucun LLM, shell, privilège
+supplémentaire ni dépendance ajouté ; aucune étape 12.2 ou 12.3 implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -461,7 +480,7 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Simple-AIOS V0.2
 
-Les étapes 11.1 à 11.5 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
+La phase 11 et l'étape 12.1 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
 Les étapes à faire décrivent des objectifs, pas des fonctionnalités présentes.
 La V0.2 commence par **11.1 — `filesystem.list`**.
 
@@ -544,7 +563,7 @@ Commit :
 
 ### Phase 12 — Sécurité filesystem
 
-#### [todo] 12.1 — Workspaces autorisés
+#### [done] 12.1 — Workspaces autorisés
 
 Ajouter une configuration définissant les chemins dans lesquels Simple-AIOS peut travailler.
 
@@ -558,7 +577,7 @@ filesystem_roots = [
 
 Tout accès en dehors de ces chemins doit être refusé.
 
-Commit futur :
+Commit :
 `feat: restrict filesystem workspaces`
 
 #### [todo] 12.2 — Validation renforcée des chemins

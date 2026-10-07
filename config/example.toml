@@ -3,3 +3,4 @@ model = "qwen3"
 ollama_url = "http://127.0.0.1:11434"
 data_dir = "~/.local/share/simple-aios"
 log_level = "INFO"
+filesystem_roots = ["~/AIOS-Workspace"]

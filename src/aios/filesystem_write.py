@@ -2,22 +2,18 @@
 
 from collections.abc import Callable
 import os
-from pathlib import Path
 
-from aios._filesystem import encode_text, open_directory, validate_relative_path, workspace_path
-from aios.tools import RiskLevel, Tool, ToolResult
+from aios._filesystem import encode_text, open_directory, validate_relative_path, FilesystemTool
+from aios.tools import RiskLevel, ToolResult
 
 
 MAX_WRITE_BYTES = 64 * 1024
 
 
-class FilesystemWriteTool(Tool):
+class FilesystemWriteTool(FilesystemTool):
     name = "filesystem.write"
-    description = "Create a new UTF-8 file of at most 64 KiB in ~/AIOS-Workspace after confirmation."
+    description = "Create a new UTF-8 file of at most 64 KiB in an authorized workspace after confirmation."
     risk_level = RiskLevel.CONFIRM
-
-    def __init__(self, workspace: Path | None = None) -> None:
-        self._workspace = workspace_path(workspace)
 
     def execute(
         self, arguments: dict[str, object], *,
@@ -28,19 +24,20 @@ class FilesystemWriteTool(Tool):
         return super().execute(arguments, authorize=authorize)
 
     def validate_arguments(self, arguments: dict[str, object]) -> None:
-        if arguments.keys() != {"path", "content"}:
-            raise ValueError("Only the required path and content are accepted")
+        if arguments.keys() not in ({"path", "content"}, {"path", "content", "workspace"}):
+            raise ValueError("path and content are required; only workspace is optional")
         path = validate_relative_path(arguments["path"])
         if path == ".":
             raise ValueError("path must identify a new file")
         encode_text(arguments["content"], MAX_WRITE_BYTES)
+        self.validate_workspace(arguments)
         arguments["path"] = path
 
     def _execute(self, arguments: dict[str, object]) -> ToolResult:
         path = arguments["path"]
         data = arguments["content"].encode("utf-8")
         parent, _, name = path.rpartition("/")
-        with open_directory(self._workspace, parent or ".") as directory:
+        with open_directory(self.workspace_for(arguments), parent or ".") as directory:
             # Exclusive creation refuses all existing entries without truncation.
             flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
             descriptor = os.open(name, flags, mode=0o600, dir_fd=directory)
@@ -58,5 +55,5 @@ class FilesystemWriteTool(Tool):
                 # Do not unlink a pathname that another process could replace.
                 return ToolResult(success=False, error="File creation failed; file may be incomplete")
         return ToolResult(success=True, data={
-            "path": path, "created": True, "size_bytes": len(data),
+            "workspace": arguments["workspace"], "path": path, "created": True, "size_bytes": len(data),
         })

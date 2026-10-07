@@ -63,7 +63,7 @@ def test_listing_returns_metadata_without_reading_contents_writing_or_running_co
         ))
 
     assert result == ToolResult(success=True, data={
-        "path": ".", "entries": [
+        "workspace": str(workspace), "path": ".", "entries": [
             {"name": ".empty", "type": "file", "size_bytes": 0},
             {"name": "broken", "type": "symlink", "size_bytes": None},
             {"name": "folder", "type": "directory", "size_bytes": None},
@@ -97,7 +97,7 @@ def test_nested_directory_is_relative_to_workspace_not_current_directory(workspa
     result = FilesystemListTool().execute(arguments)
 
     assert result == ToolResult(success=True, data={
-        "path": "dossier été/sub", "entries": [
+        "workspace": str(workspace), "path": "dossier été/sub", "entries": [
             {"name": name, "type": "file", "size_bytes": 2},
         ], "truncated": False,
     })

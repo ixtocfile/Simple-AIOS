@@ -45,7 +45,7 @@ def test_atomic_update_preserves_exact_backup_and_reports_real_result(workspace,
         result = update("dossier été/notes.txt", content)
         assert result.success and result.error is None
         backup_path = result.data["backup_path"]
-        assert result.data == {"path": "dossier été/notes.txt", "updated": True,
+        assert result.data == {"workspace": str(workspace), "path": "dossier été/notes.txt", "updated": True,
                                "size_bytes": len(content.encode()), "backup_path": backup_path}
         assert old_descriptor.read() == previous  # The old inode was never truncated.
     backup = workspace / backup_path
@@ -149,7 +149,7 @@ def test_confirmation_sees_exact_arguments_and_cannot_change_them(workspace, mon
 
     def authorize(preview):
         opened.assert_not_called()
-        assert preview == arguments
+        assert preview == {**arguments, "workspace": str(workspace)}
         preview.update(path="../outside", content="tampered")
         return True
 
@@ -542,7 +542,7 @@ def test_core_policy_result_and_sqlite_never_persist_file_contents(workspace, tm
             handler.assert_not_called()
         else:
             decision = PolicyDecision.DENY if scenario == "deny" else PolicyDecision.CONFIRM
-            handler.assert_called_once_with(decision, tool.name, arguments)
+            handler.assert_called_once_with(decision, tool.name, {**arguments, "workspace": str(workspace)})
     assert provider.calls[1][-2] == {"role": "assistant", "content": reply}
     for text in (old_content, new_content):
         assert all(text not in statement for statement in statements)

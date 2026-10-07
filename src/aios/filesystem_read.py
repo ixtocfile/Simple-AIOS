@@ -1,36 +1,33 @@
 """Read a bounded UTF-8 text file inside the trusted workspace."""
 
 import os
-from pathlib import Path
 import stat
 
-from aios._filesystem import open_directory, validate_relative_path, workspace_path
-from aios.tools import RiskLevel, Tool, ToolResult
+from aios._filesystem import open_directory, validate_relative_path, FilesystemTool
+from aios.tools import RiskLevel, ToolResult
 
 
 MAX_READ_BYTES = 64 * 1024
 
 
-class FilesystemReadTool(Tool):
+class FilesystemReadTool(FilesystemTool):
     name = "filesystem.read"
-    description = "Read a UTF-8 text file of at most 64 KiB relative to ~/AIOS-Workspace."
+    description = "Read a UTF-8 text file of at most 64 KiB relative to an authorized workspace."
     risk_level = RiskLevel.READ
 
-    def __init__(self, workspace: Path | None = None) -> None:
-        self._workspace = workspace_path(workspace)
-
     def validate_arguments(self, arguments: dict[str, object]) -> None:
-        if arguments.keys() != {"path"}:
-            raise ValueError("Only the required path is accepted")
+        if arguments.keys() not in ({"path"}, {"path", "workspace"}):
+            raise ValueError("path is required; only workspace is optional")
         path = validate_relative_path(arguments["path"])
         if path == ".":
             raise ValueError("path must identify a file")
+        self.validate_workspace(arguments)
         arguments["path"] = path
 
     def _execute(self, arguments: dict[str, object]) -> ToolResult:
         path = arguments["path"]
         parent, _, name = path.rpartition("/")
-        with open_directory(self._workspace, parent or ".") as directory:
+        with open_directory(self.workspace_for(arguments), parent or ".") as directory:
             expected = os.stat(name, dir_fd=directory, follow_symlinks=False)
             if not stat.S_ISREG(expected.st_mode) or expected.st_size > MAX_READ_BYTES:
                 raise ValueError("Only bounded regular files may be read")
@@ -58,5 +55,5 @@ class FilesystemReadTool(Tool):
         if any((ord(c) < 32 and c not in "\t\r\n") or ord(c) == 127 for c in content):
             raise ValueError("File contains non-text control characters")
         return ToolResult(success=True, data={
-            "path": path, "content": content, "size_bytes": len(data),
+            "workspace": arguments["workspace"], "path": path, "content": content, "size_bytes": len(data),
         })
