@@ -8,8 +8,9 @@ configuration, des logs applicatifs, un historique SQLite des tâches et appels
 d'outils, et un faux provider pour les tests.
 Les huit outils de lecture sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
-redémarre un service et `filesystem.mkdir` crée un dossier dans le workspace,
-après confirmation explicite dans le CLI.
+redémarre un service, `filesystem.mkdir` crée un dossier et `filesystem.write`
+crée un fichier texte. Ces trois actions exigent une confirmation explicite
+dans le CLI.
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
 Le daemon local `aiosd` expose aussi le Core par un socket Unix privé.
 
@@ -164,7 +165,7 @@ commandes shell proposées par le modèle ne sont jamais exécutées.
 porte une session synchrone indépendante du terminal. Il conserve le contexte,
 valide les appels, applique la policy et la limite de cinq tentatives, exécute
 les outils autorisés et enregistre tâches et résultats dans l'historique.
-Par défaut, `build_tool_registry()` fournit les dix outils existants.
+Par défaut, `build_tool_registry()` fournit les onze outils existants.
 
 - `chat(text)` traite un message non vide et renvoie la réponse textuelle.
 - `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
@@ -463,6 +464,11 @@ remplacé par `[contenu du fichier non conservé]` avant toute écriture SQLite,
 indépendamment de ce filtre. Le chemin, la taille et le statut restent conservés
 après filtrage ; le contenu lu reste uniquement dans le contexte du modèle.
 
+Pour `filesystem.write`, c'est l'argument `content` qui est remplacé par ce
+même marqueur avant l'enregistrement initial de la tentative, même si l'appel
+est ensuite invalide ou refusé. Le contenu réel reste disponible pour la
+confirmation et l'écriture autorisée ; il n'est pas ajouté aux logs applicatifs.
+
 Une erreur du provider après l'outil laisse son résultat enregistré. Un arrêt
 brutal ou un échec d'écriture du résultat peut laisser l'appel `running`, avec
 une issue inconnue ; aucune reprise ni réexécution automatique n'est effectuée.
@@ -547,7 +553,7 @@ fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
 l'historique précédent. Le prompt n'est ni affiché ni journalisé.
 
-Il décrit le rôle d'assistant CLI Linux, les dix outils enregistrés avec leurs
+Il décrit le rôle d'assistant CLI Linux, les onze outils enregistrés avec leurs
 arguments et risques, le format JSON strict et la limite de cinq tentatives par
 requête. Son catalogue est explicite, sans découverte d'outils ni lecture de
 données système à sa construction. Les tests vérifient sa correspondance avec
@@ -715,9 +721,9 @@ La copie présentée à l'autorisation inclut les valeurs normalisées ou par
 défaut ; la modifier ne change pas les arguments exécutés.
 
 Les appels Python de confiance peuvent généralement omettre ce paramètre.
-`systemd.restart` et `filesystem.mkdir` exigent toutefois une fonction
-d'autorisation, même hors du CLI ;
-son absence produit `Tool execution denied`. Le Core fournit systématiquement
+`systemd.restart`, `filesystem.mkdir` et `filesystem.write` exigent toutefois
+une fonction d'autorisation, même hors du CLI ; son absence produit
+`Tool execution denied`. Le Core fournit systématiquement
 cette fonction pour appliquer le Policy Engine et la confirmation utilisateur
 à chaque appel du modèle. Le registre lui-même reste indépendant du CLI.
 
@@ -737,7 +743,7 @@ Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les huit
 outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`,
 `systemd.status`, `systemd.list`, `filesystem.list` et `filesystem.read`,
 déclarent `RiskLevel.READ`.
-`systemd.restart` et `filesystem.mkdir` déclarent `RiskLevel.CONFIRM`.
+`systemd.restart`, `filesystem.mkdir` et `filesystem.write` déclarent `RiskLevel.CONFIRM`.
 Le registre valide le type du niveau à l'enregistrement : une simple chaîne
 comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
 sans exécuter l'outil.
@@ -815,9 +821,10 @@ de l'appel, y compris son éventuel refus. Chaque appel réévalue la policy et,
 si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autre appel.
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
-action. Les huit outils de lecture sont classés `READ` ; `systemd.restart` et
-`filesystem.mkdir` exigent une confirmation. Le daemon transmet au CLI les arguments déjà validés
-et normalisés, puis renvoie son accord au Core juste avant l'exécution de l'outil.
+action. Les huit outils de lecture sont classés `READ` ; `systemd.restart`,
+`filesystem.mkdir` et `filesystem.write` exigent une confirmation. Le daemon
+transmet au CLI les arguments déjà validés et normalisés, puis renvoie son accord
+au Core juste avant l'exécution de l'outil.
 
 ## Format JSON des appels d'outils
 
@@ -869,8 +876,9 @@ rien. Le Core enchaîne les vérifications décrites ci-dessous.
 
 Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`,
 `systemd.status`, `systemd.list`, `systemd.restart`, `filesystem.list`,
-`filesystem.read` et `filesystem.mkdir` au début de chaque session, sans les exécuter. Lorsqu'une
-réponse du modèle est un appel JSON valide, il suit cet ordre :
+`filesystem.read`, `filesystem.mkdir` et `filesystem.write` au début de chaque
+session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
+valide, il suit cet ordre :
 
 1. Enregistrer la tentative et ses arguments filtrés dans l'historique SQLite.
 2. Rechercher l'outil enregistré et valider ses arguments spécifiques.
@@ -1336,6 +1344,64 @@ SQLite avec les arguments filtrés et le statut.
 Comme pour `systemd.restart`, un appel Python direct doit fournir `authorize` ;
 seul son retour strictement égal au booléen `True` autorise la création.
 Les tests créent uniquement des dossiers temporaires, avec FakeLLMProvider.
+
+## Outil fichiers : filesystem.write
+
+`aios.filesystem_write.FilesystemWriteTool` crée un nouveau fichier texte dans
+le workspace fixe `~/AIOS-Workspace`, sous le compte du daemon. Son niveau est
+`CONFIRM`. Les arguments sont validés avant la décision du Policy Engine ; le
+CLI présente le chemin et le contenu, puis exige `oui` dans un terminal
+interactif. Chaque appel nécessite un nouvel accord. Sans autorisation, l'outil
+n'accède pas au filesystem, y compris lors d'un appel Python direct sans
+fonction `authorize`.
+
+Les deux seuls arguments acceptés sont obligatoires :
+
+| Argument | Valeur |
+| --- | --- |
+| `path` | Chemin relatif d'un nouveau fichier, avec les mêmes contrôles que `filesystem.mkdir`. |
+| `content` | Chaîne UTF-8 valide, vide autorisée, d'au plus 65 536 octets (64 Kio). |
+
+Les tabulations et fins de ligne sont conservées. Les autres contrôles ASCII,
+dont NUL et DEL, sont refusés. La limite porte sur les octets encodés, pas sur
+le nombre de caractères ; aucun contenu n'est tronqué pour la respecter.
+La limite existante de 65 536 caractères pour le JSON de l'appel complet reste
+applicable et peut réduire la quantité de texte acceptée dans un appel du modèle.
+Aucune option d'encodage, d'ajout, d'écrasement ou de permissions n'est acceptée.
+
+Le workspace, ses ancêtres et les dossiers parents du fichier doivent déjà
+exister, sans lien symbolique. L'outil ne crée pas de dossier. Exemple pour
+`documents` déjà présent :
+
+```json
+{"tool":"filesystem.write","arguments":{"path":"documents/notes.txt","content":"Bonjour"}}
+```
+
+Les dossiers sont ouverts sans suivre de lien. La création du fichier utilise
+[`O_CREAT | O_EXCL`](https://man7.org/linux/man-pages/man2/open.2.html), relativement
+au dossier parent ouvert, avec des permissions `0600` réduites par l'umask.
+Toute destination existante est refusée, y compris un lien symbolique cassé,
+un lien physique, un dossier ou un fichier spécial. Il n'y a ni troncature d'un
+fichier existant, ni shell, ni élévation de privilèges. Les écritures utilisent
+le descripteur du fichier créé, même si son nom est remplacé simultanément.
+
+Le succès est renvoyé après l'écriture de tous les octets et la fermeture du
+fichier. `data` contient `path`, `created: true` et `size_bytes`, sans recopier
+le contenu. Les écritures courtes sont complétées. Un argument invalide produit
+`Invalid tool arguments`, un refus `Tool execution denied` et un échec
+d'ouverture, notamment une destination existante, `Tool execution failed`.
+
+Une erreur d'écriture ou de fermeture du fichier produit
+`File creation failed; file may be incomplete`. Un fichier vide ou partiel peut
+alors subsister, également en cas d'interruption. L'outil ne supprime pas ce
+chemin et ne réessaie pas ; un nouvel appel sur une destination existante reste
+refusé. La création du contenu n'est donc pas une opération atomique complète.
+
+Le Core masque l'argument `content` avant toute insertion dans SQLite, même
+pour une tentative invalide ou refusée. Il conserve le chemin, le résultat et
+le statut après filtrage habituel. Le contenu réel reste dans les échanges en
+mémoire et dans l'aperçu de confirmation, puis dans le fichier autorisé.
+Les tests utilisent des fichiers temporaires et FakeLLMProvider.
 
 ## Tests
 

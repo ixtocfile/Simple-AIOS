@@ -416,15 +416,15 @@ def tool_reply(arguments=None):
     return json.dumps({"tool": "test.action", "arguments": arguments or {}})
 
 
-def test_default_cli_registry_contains_eight_read_tools_and_two_confirmed_tools():
+def test_default_cli_registry_contains_eight_read_tools_and_three_confirmed_tools():
     tools = build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
         "systemd.status", "systemd.list", "systemd.restart",
-        "filesystem.list", "filesystem.read", "filesystem.mkdir",
+        "filesystem.list", "filesystem.read", "filesystem.mkdir", "filesystem.write",
     ]
     assert [tool.risk_level for tool in tools] == (
-        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2 + [RiskLevel.CONFIRM]
+        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2 + [RiskLevel.CONFIRM] * 2
     )
 
 
@@ -461,6 +461,62 @@ def test_cli_mkdir_requires_explicit_terminal_confirmation(
         assert "Action refusée." in captured.out
     assert captured.err == ""
     assert "notes" not in (tmp_path / "logs/simple-aios.log").read_text()
+
+
+@pytest.mark.parametrize(("interactive", "answer", "allowed"), [
+    (True, "oui", True), (True, " OUI ", True), (True, "", False),
+    (True, "non", False), (True, "yes", False), (True, EOFError, False),
+    (True, KeyboardInterrupt, False), (False, None, False),
+])
+def test_cli_write_previews_content_and_requires_explicit_confirmation(
+    cli_session, monkeypatch, capsys, tmp_path, interactive, answer, allowed,
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "AIOS-Workspace"
+    workspace.mkdir()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: interactive)
+    arguments = {"path": "notes.txt", "content": "Bonjour\nSuite"}
+    provider = FakeLLMProvider([json.dumps({"tool": "filesystem.write", "arguments": arguments}), "Résultat reçu"])
+    entries = ["Crée le fichier"] + ([answer] if interactive else []) + ["/exit"]
+    assert cli_session(provider, entries) == 0
+    assert json.loads(provider.calls[1][-1]["content"]) == {"tool_result": {
+        "tool": "filesystem.write", "success": allowed,
+        "data": {"path": "notes.txt", "created": True, "size_bytes": 13} if allowed else None,
+        "error": None if allowed else "Tool execution denied",
+    }}
+    assert (workspace / "notes.txt").exists() is allowed
+    if allowed:
+        assert (workspace / "notes.txt").read_bytes() == b"Bonjour\nSuite"
+    captured = capsys.readouterr()
+    previews = [line.removeprefix("Action à confirmer : ") for line in captured.out.splitlines()
+                if line.startswith("Action à confirmer : ")]
+    assert len(previews) == int(interactive)
+    if interactive:
+        assert json.loads(previews[0]) == {"outil": "filesystem.write", "arguments": arguments}
+    if not allowed:
+        assert "Action refusée." in captured.out
+    assert captured.err == ""
+    assert "Bonjour" not in (tmp_path / "logs/simple-aios.log").read_text()
+
+
+def test_cli_write_requires_fresh_confirmation_and_never_overwrites(
+    cli_session, monkeypatch, capsys, tmp_path,
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "AIOS-Workspace"
+    workspace.mkdir()
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    provider = FakeLLMProvider([
+        json.dumps({"tool": "filesystem.write", "arguments": {"path": path, "content": content}})
+        for path, content in [("notes", "first"), ("second", "denied"), ("notes", "replacement")]
+    ] + ["Terminé"])
+    assert cli_session(provider, ["Crée les fichiers", "oui", "non", "oui", "/exit"]) == 0
+    assert [path.name for path in workspace.iterdir()] == ["notes"]
+    assert (workspace / "notes").read_bytes() == b"first"
+    results = [json.loads(call[-1]["content"])["tool_result"] for call in provider.calls[1:]]
+    assert [result["success"] for result in results] == [True, False, False]
+    assert [result["error"] for result in results] == [None, "Tool execution denied", "Tool execution failed"]
+    assert capsys.readouterr().out.count("Action à confirmer") == 3
 
 
 def test_cli_mkdir_requires_a_fresh_confirmation_for_each_creation(

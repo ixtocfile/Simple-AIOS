@@ -7,6 +7,7 @@ import json
 from aios.filesystem_list import FilesystemListTool
 from aios.filesystem_mkdir import FilesystemMkdirTool
 from aios.filesystem_read import FilesystemReadTool
+from aios.filesystem_write import FilesystemWriteTool
 from aios.history import TaskHistory
 from aios.llm import LLMProvider, Message
 from aios.policy import PolicyDecision, PolicyEngine
@@ -38,7 +39,7 @@ def build_tool_registry() -> ToolRegistry:
     for tool in (
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
         SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
-        FilesystemListTool(), FilesystemReadTool(), FilesystemMkdirTool(),
+        FilesystemListTool(), FilesystemReadTool(), FilesystemMkdirTool(), FilesystemWriteTool(),
     ):
         registry.register(tool)
     return registry
@@ -100,7 +101,11 @@ class Core:
         self, name: str, arguments: dict[str, object],
         authorize: Callable[[dict[str, object]], bool], task_id: int,
     ) -> Message:
-        call_id = self._history.start_tool(task_id, name, arguments)
+        history_arguments = arguments
+        if name == "filesystem.write" and "content" in arguments:
+            # Mask file contents before the initial insert, even for denied/invalid calls.
+            history_arguments = {**arguments, "content": "[contenu du fichier non conservé]"}
+        call_id = self._history.start_tool(task_id, name, history_arguments)
         try:
             result = self._registry.execute(name, arguments, authorize=authorize)
         except (KeyboardInterrupt, SystemExit):

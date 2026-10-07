@@ -63,6 +63,19 @@ lien cassé. Pas de création récursive, de remplacement ni de commande shell.
 Permissions demandées 0700, réduites par l'umask. Le résultat contient path et
 created=true uniquement après création réussie.
 {"tool":"filesystem.mkdir","arguments":{"path":"nouveau-dossier"}}
+- filesystem.write [CONFIRM] : créer un nouveau fichier texte UTF-8 dans ~/AIOS-Workspace après confirmation explicite.
+path et content sont obligatoires, seuls arguments acceptés. path suit les mêmes
+restrictions que filesystem.mkdir ; workspace et parents doivent déjà exister.
+content est une chaîne, vide autorisée, d'au plus 65536 octets UTF-8 (64 Kio),
+sans contrôles ASCII autres que tabulation et fins de ligne. Les limites du JSON
+des appels s'appliquent aussi. Toute destination existante, même un lien cassé,
+est refusée : aucun écrasement, ajout à un fichier ou suivi de lien symbolique.
+Permissions demandées 0600, réduites par l'umask. Le résultat contient path,
+created=true et size_bytes seulement après écriture complète. Une erreur peut
+laisser un fichier incomplet ; elle ne signifie pas une annulation de la création.
+Le CLI présente le chemin et le contenu à confirmer ; content est masqué dans
+l'historique SQLite et n'est pas journalisé.
+{"tool":"filesystem.write","arguments":{"path":"notes.txt","content":"Bonjour"}}
 
 Résultats réels
 L'application renvoie après ton appel un message de rôle user contenant un objet

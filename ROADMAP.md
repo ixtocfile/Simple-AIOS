@@ -6,8 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 à 11.3 de la V0.2 terminées.
-Prochaine étape : 11.4 — `filesystem.write`, à réaliser uniquement sur demande.
+État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 à 11.4 de la V0.2 terminées.
+Prochaine étape : 11.5 — Modification sécurisée d'un fichier, uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -353,6 +353,23 @@ résultat réel transmis au modèle et à SQLite testés. Dossiers temporaires e
 FakeLLMProvider uniquement, sans commande externe, privilèges supplémentaires,
 nouvelle dépendance ni étape suivante implémentée.
 
+Validation de l'étape 11.4 sous Python 3.12 : installation éditable réussie.
+Les tests ciblés filesystem, CLI, prompt, Core et historique d'outils donnent
+434 réussites, dont 103 nouveaux tests. `python -m pytest -q` : 1099 réussites
+et 57 échecs liés aux sockets Unix interdits par l'environnement, comme aux
+étapes précédentes ; aucun test supprimé ou ignoré. `filesystem.write` CONFIRM
+intégré au Core et au prompt : création exclusive d'un fichier UTF-8 neuf,
+contenu borné à 64 Kio, chemin relatif validé, parents préexistants, permissions
+0600 réduites par l'umask. Refus des destinations existantes, liens symboliques
+et physiques, fichiers spéciaux, chemins invalides et contenu hors limites
+vérifiés. Écritures courtes, changements concurrents de chemins, erreurs et
+interruptions sans faux succès, fermeture des descripteurs et signalement d'un
+fichier potentiellement incomplet testés. Confirmation du chemin et du contenu,
+refus par défaut, DENY non contournable et masquage du contenu avant toute
+insertion SQLite vérifiés avec des fichiers temporaires et FakeLLMProvider.
+Aucun shell, privilège supplémentaire ou dépendance ajouté ; aucune modification
+de fichier existant ni étape suivante implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -423,7 +440,7 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Simple-AIOS V0.2
 
-Les étapes 11.1 à 11.3 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
+Les étapes 11.1 à 11.4 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
 Les étapes à faire décrivent des objectifs, pas des fonctionnalités présentes.
 La V0.2 commence par **11.1 — `filesystem.list`**.
 
@@ -475,7 +492,7 @@ Validation stricte du chemin.
 Commit :
 `feat: add directory creation tool`
 
-#### [todo] 11.4 — `filesystem.write`
+#### [done] 11.4 — `filesystem.write`
 
 Créer un nouveau fichier texte.
 
@@ -489,7 +506,7 @@ Contraintes :
 - UTF-8 ;
 - refus d'écraser silencieusement un fichier existant.
 
-Commit futur :
+Commit :
 `feat: add file creation tool`
 
 #### [todo] 11.5 — Modification sécurisée d'un fichier
