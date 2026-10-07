@@ -6,8 +6,8 @@ pas des fonctionnalités déjà présentes.
 
 Statuts : `[done]` terminé, `[current]` en cours, `[todo]` à faire.
 
-État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 à 11.4 de la V0.2 terminées.
-Prochaine étape : 11.5 — Modification sécurisée d'un fichier, uniquement sur demande.
+État : phases 0 à 10 de la V0.1 terminées. Étapes 11.1 à 11.5 de la V0.2 terminées.
+Prochaine étape : 12.1 — Workspaces autorisés, uniquement sur demande.
 
 Validation de l'étape 0.1 sous Python 3.12 : installation éditable réussie,
 `python -m pytest -q` : 1 test réussi ; `python -m aios` : `Simple-AIOS`.
@@ -370,6 +370,27 @@ insertion SQLite vérifiés avec des fichiers temporaires et FakeLLMProvider.
 Aucun shell, privilège supplémentaire ou dépendance ajouté ; aucune modification
 de fichier existant ni étape suivante implémentée.
 
+Validation de l'étape 11.5 sous Python 3.12 : installation éditable réussie.
+Les tests ciblés filesystem, CLI, prompt, Core et historique d'outils donnent
+556 réussites, dont 122 nouveaux tests. `python -m pytest -q` : 1221 réussites
+et 57 échecs liés aux sockets Unix interdits par l'environnement, comme aux
+étapes précédentes ; aucun test supprimé ou ignoré. Les avertissements de pytest
+concernent le nettoyage de dossiers temporaires de tests précédents.
+`filesystem.update` CONFIRM intégré au Core et au prompt, remplacement complet
+d'un fichier UTF-8 existant, ancien et nouveau contenu bornés à 64 Kio, chemins
+stricts et parents préexistants vérifiés. Copie exacte dans un dossier privé
+unique, sauvegarde synchronisée avant remplacement atomique, conservation des
+permissions ordinaires et sauvegardes successives indépendantes testées.
+Refus des liens, fichiers spéciaux, métadonnées non prises en charge et contenus
+invalides, écritures et lectures courtes, changements concurrents détectables,
+échecs de préparation sans modification de l'original, issue incertaine après
+remplacement et fermeture des descripteurs vérifiés. Confirmation du chemin et
+du contenu, refus par défaut, DENY non contournable et masquage avant toute
+insertion SQLite testés avec fichiers temporaires et FakeLLMProvider. Les limites
+face aux écrivains externes et les préparations laissées sur erreur sont
+documentées. Aucun shell, privilège supplémentaire, dépendance, configuration
+de workspaces ni rollback ajouté ; aucune étape suivante implémentée.
+
 ## Phase 0 — Fondation
 
 - [done] 0.1 — Initialisation : package Python, bannière, tests et documentation.
@@ -440,7 +461,7 @@ Commencer uniquement lorsque les phases précédentes fonctionnent.
 
 ## Simple-AIOS V0.2
 
-Les étapes 11.1 à 11.4 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
+Les étapes 11.1 à 11.5 sont terminées ; les autres étapes ci-dessous restent `[todo]`.
 Les étapes à faire décrivent des objectifs, pas des fonctionnalités présentes.
 La V0.2 commence par **11.1 — `filesystem.list`**.
 
@@ -509,7 +530,7 @@ Contraintes :
 Commit :
 `feat: add file creation tool`
 
-#### [todo] 11.5 — Modification sécurisée d'un fichier
+#### [done] 11.5 — Modification sécurisée d'un fichier
 
 Permettre de modifier un fichier texte existant.
 
@@ -518,7 +539,7 @@ Niveau :
 
 Créer automatiquement une sauvegarde avant modification.
 
-Commit futur :
+Commit :
 `feat: add safe file update tool`
 
 ### Phase 12 — Sécurité filesystem

@@ -416,15 +416,16 @@ def tool_reply(arguments=None):
     return json.dumps({"tool": "test.action", "arguments": arguments or {}})
 
 
-def test_default_cli_registry_contains_eight_read_tools_and_three_confirmed_tools():
+def test_default_cli_registry_contains_eight_read_tools_and_four_confirmed_tools():
     tools = build_tool_registry().list_tools()
     assert [tool.name for tool in tools] == [
         "system.info", "system.memory", "system.disk", "process.list",
         "systemd.status", "systemd.list", "systemd.restart",
         "filesystem.list", "filesystem.read", "filesystem.mkdir", "filesystem.write",
+        "filesystem.update",
     ]
     assert [tool.risk_level for tool in tools] == (
-        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2 + [RiskLevel.CONFIRM] * 2
+        [RiskLevel.READ] * 6 + [RiskLevel.CONFIRM] + [RiskLevel.READ] * 2 + [RiskLevel.CONFIRM] * 3
     )
 
 
@@ -516,6 +517,64 @@ def test_cli_write_requires_fresh_confirmation_and_never_overwrites(
     results = [json.loads(call[-1]["content"])["tool_result"] for call in provider.calls[1:]]
     assert [result["success"] for result in results] == [True, False, False]
     assert [result["error"] for result in results] == [None, "Tool execution denied", "Tool execution failed"]
+    assert capsys.readouterr().out.count("Action à confirmer") == 3
+
+
+@pytest.mark.parametrize(("interactive", "answer", "allowed"), [
+    (True, "oui", True), (True, " OUI ", True), (True, "", False),
+    (True, "non", False), (True, "yes", False), (True, EOFError, False),
+    (True, KeyboardInterrupt, False), (False, None, False),
+])
+def test_cli_update_previews_content_and_requires_explicit_confirmation(
+    cli_session, monkeypatch, capsys, tmp_path, interactive, answer, allowed,
+):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "AIOS-Workspace"
+    workspace.mkdir()
+    path = workspace / "notes.txt"
+    path.write_text("avant")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: interactive)
+    arguments = {"path": "notes.txt", "content": "Bonjour\nSuite"}
+    provider = FakeLLMProvider([json.dumps({"tool": "filesystem.update", "arguments": arguments}), "Résultat reçu"])
+    entries = ["Modifie le fichier"] + ([answer] if interactive else []) + ["/exit"]
+    assert cli_session(provider, entries) == 0
+    result = json.loads(provider.calls[1][-1]["content"])["tool_result"]
+    assert result["tool"] == "filesystem.update" and result["success"] is allowed
+    assert result["error"] == (None if allowed else "Tool execution denied")
+    assert path.read_text() == (arguments["content"] if allowed else "avant")
+    if allowed:
+        assert result["data"]["updated"] is True and result["data"]["size_bytes"] == 13
+        assert (workspace / result["data"]["backup_path"]).read_text() == "avant"
+    else:
+        assert result["data"] is None and list(workspace.iterdir()) == [path]
+    captured = capsys.readouterr()
+    previews = [line.removeprefix("Action à confirmer : ") for line in captured.out.splitlines()
+                if line.startswith("Action à confirmer : ")]
+    assert len(previews) == int(interactive)
+    if interactive:
+        assert json.loads(previews[0]) == {"outil": "filesystem.update", "arguments": arguments}
+    if not allowed:
+        assert "Action refusée." in captured.out
+    assert captured.err == ""
+    assert "Bonjour" not in (tmp_path / "logs/simple-aios.log").read_text()
+
+
+def test_cli_update_asks_again_and_backs_up_each_confirmed_version(cli_session, monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    workspace = tmp_path / "AIOS-Workspace"
+    workspace.mkdir()
+    (workspace / "notes.txt").write_text("first")
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    provider = FakeLLMProvider([
+        json.dumps({"tool": "filesystem.update", "arguments": {"path": "notes.txt", "content": content}})
+        for content in ["second", "denied", "third"]
+    ] + ["Terminé"])
+    assert cli_session(provider, ["Modifie le fichier", "oui", "non", "oui", "/exit"]) == 0
+    results = [json.loads(call[-1]["content"])["tool_result"] for call in provider.calls[1:]]
+    assert [result["success"] for result in results] == [True, False, True]
+    assert [(workspace / result["data"]["backup_path"]).read_text() for result in results if result["success"]] == ["first", "second"]
+    assert (workspace / "notes.txt").read_text() == "third"
+    assert len(list(workspace.iterdir())) == 3
     assert capsys.readouterr().out.count("Action à confirmer") == 3
 
 

@@ -4,7 +4,7 @@ from collections.abc import Callable
 import os
 from pathlib import Path
 
-from aios._filesystem import open_directory, validate_relative_path, workspace_path
+from aios._filesystem import encode_text, open_directory, validate_relative_path, workspace_path
 from aios.tools import RiskLevel, Tool, ToolResult
 
 
@@ -33,13 +33,7 @@ class FilesystemWriteTool(Tool):
         path = validate_relative_path(arguments["path"])
         if path == ".":
             raise ValueError("path must identify a new file")
-        content = arguments["content"]
-        if (
-            not isinstance(content, str) or len(content) > MAX_WRITE_BYTES
-            or len(content.encode("utf-8")) > MAX_WRITE_BYTES
-            or any((ord(c) < 32 and c not in "\t\r\n") or ord(c) == 127 for c in content)
-        ):
-            raise ValueError("content must be bounded UTF-8 text")
+        encode_text(arguments["content"], MAX_WRITE_BYTES)
         arguments["path"] = path
 
     def _execute(self, arguments: dict[str, object]) -> ToolResult:

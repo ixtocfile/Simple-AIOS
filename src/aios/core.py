@@ -7,6 +7,7 @@ import json
 from aios.filesystem_list import FilesystemListTool
 from aios.filesystem_mkdir import FilesystemMkdirTool
 from aios.filesystem_read import FilesystemReadTool
+from aios.filesystem_update import FilesystemUpdateTool
 from aios.filesystem_write import FilesystemWriteTool
 from aios.history import TaskHistory
 from aios.llm import LLMProvider, Message
@@ -40,6 +41,7 @@ def build_tool_registry() -> ToolRegistry:
         SystemInfoTool(), SystemMemoryTool(), SystemDiskTool(), ProcessListTool(),
         SystemdStatusTool(), SystemdListTool(), SystemdRestartTool(),
         FilesystemListTool(), FilesystemReadTool(), FilesystemMkdirTool(), FilesystemWriteTool(),
+        FilesystemUpdateTool(),
     ):
         registry.register(tool)
     return registry
@@ -102,7 +104,7 @@ class Core:
         authorize: Callable[[dict[str, object]], bool], task_id: int,
     ) -> Message:
         history_arguments = arguments
-        if name == "filesystem.write" and "content" in arguments:
+        if name in {"filesystem.write", "filesystem.update"} and "content" in arguments:
             # Mask file contents before the initial insert, even for denied/invalid calls.
             history_arguments = {**arguments, "content": "[contenu du fichier non conservé]"}
         call_id = self._history.start_tool(task_id, name, history_arguments)

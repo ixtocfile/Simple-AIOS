@@ -8,8 +8,9 @@ configuration, des logs applicatifs, un historique SQLite des tâches et appels
 d'outils, et un faux provider pour les tests.
 Les huit outils de lecture sont accessibles à la conversation après
 validation de l'appel et autorisation par le Policy Engine. `systemd.restart`
-redémarre un service, `filesystem.mkdir` crée un dossier et `filesystem.write`
-crée un fichier texte. Ces trois actions exigent une confirmation explicite
+redémarre un service, `filesystem.mkdir` crée un dossier, `filesystem.write`
+crée un fichier texte et `filesystem.update` modifie un fichier avec sauvegarde.
+Ces quatre actions exigent une confirmation explicite
 dans le CLI.
 La commande `/diagnose` rassemble cinq lectures pour un bilan général.
 Le daemon local `aiosd` expose aussi le Core par un socket Unix privé.
@@ -165,7 +166,7 @@ commandes shell proposées par le modèle ne sont jamais exécutées.
 porte une session synchrone indépendante du terminal. Il conserve le contexte,
 valide les appels, applique la policy et la limite de cinq tentatives, exécute
 les outils autorisés et enregistre tâches et résultats dans l'historique.
-Par défaut, `build_tool_registry()` fournit les onze outils existants.
+Par défaut, `build_tool_registry()` fournit les douze outils existants.
 
 - `chat(text)` traite un message non vide et renvoie la réponse textuelle.
 - `diagnose()` collecte les cinq contrôles READ et demande leur synthèse.
@@ -464,7 +465,7 @@ remplacé par `[contenu du fichier non conservé]` avant toute écriture SQLite,
 indépendamment de ce filtre. Le chemin, la taille et le statut restent conservés
 après filtrage ; le contenu lu reste uniquement dans le contexte du modèle.
 
-Pour `filesystem.write`, c'est l'argument `content` qui est remplacé par ce
+Pour `filesystem.write` et `filesystem.update`, l'argument `content` est remplacé par ce
 même marqueur avant l'enregistrement initial de la tentative, même si l'appel
 est ensuite invalide ou refusé. Le contenu réel reste disponible pour la
 confirmation et l'écriture autorisée ; il n'est pas ajouté aux logs applicatifs.
@@ -553,7 +554,7 @@ fois en tête de chaque appel au provider, y compris après un résultat d'outil
 ou une erreur Ollama. Une nouvelle session repart avec ce seul message, sans
 l'historique précédent. Le prompt n'est ni affiché ni journalisé.
 
-Il décrit le rôle d'assistant CLI Linux, les onze outils enregistrés avec leurs
+Il décrit le rôle d'assistant CLI Linux, les douze outils enregistrés avec leurs
 arguments et risques, le format JSON strict et la limite de cinq tentatives par
 requête. Son catalogue est explicite, sans découverte d'outils ni lecture de
 données système à sa construction. Les tests vérifient sa correspondance avec
@@ -721,7 +722,7 @@ La copie présentée à l'autorisation inclut les valeurs normalisées ou par
 défaut ; la modifier ne change pas les arguments exécutés.
 
 Les appels Python de confiance peuvent généralement omettre ce paramètre.
-`systemd.restart`, `filesystem.mkdir` et `filesystem.write` exigent toutefois
+`systemd.restart`, `filesystem.mkdir`, `filesystem.write` et `filesystem.update` exigent toutefois
 une fonction d'autorisation, même hors du CLI ; son absence produit
 `Tool execution denied`. Le Core fournit systématiquement
 cette fonction pour appliquer le Policy Engine et la confirmation utilisateur
@@ -743,7 +744,8 @@ Un outil sans déclaration explicite hérite de `RiskLevel.DENY`. Les huit
 outils de lecture, `system.info`, `system.memory`, `system.disk`, `process.list`,
 `systemd.status`, `systemd.list`, `filesystem.list` et `filesystem.read`,
 déclarent `RiskLevel.READ`.
-`systemd.restart`, `filesystem.mkdir` et `filesystem.write` déclarent `RiskLevel.CONFIRM`.
+`systemd.restart`, `filesystem.mkdir`, `filesystem.write` et `filesystem.update`
+déclarent `RiskLevel.CONFIRM`.
 Le registre valide le type du niveau à l'enregistrement : une simple chaîne
 comme `"READ"` est refusée. `get` et `list_tools` rendent ce niveau accessible
 sans exécuter l'outil.
@@ -822,7 +824,7 @@ si nécessaire, redemande un accord ; aucun accord n'est mémorisé pour un autr
 
 Ce composant ne valide pas le schéma d'arguments de l'outil et n'exécute aucune
 action. Les huit outils de lecture sont classés `READ` ; `systemd.restart`,
-`filesystem.mkdir` et `filesystem.write` exigent une confirmation. Le daemon
+`filesystem.mkdir`, `filesystem.write` et `filesystem.update` exigent une confirmation. Le daemon
 transmet au CLI les arguments déjà validés et normalisés, puis renvoie son accord
 au Core juste avant l'exécution de l'outil.
 
@@ -876,7 +878,7 @@ rien. Le Core enchaîne les vérifications décrites ci-dessous.
 
 Le Core enregistre `system.info`, `system.memory`, `system.disk`, `process.list`,
 `systemd.status`, `systemd.list`, `systemd.restart`, `filesystem.list`,
-`filesystem.read`, `filesystem.mkdir` et `filesystem.write` au début de chaque
+`filesystem.read`, `filesystem.mkdir`, `filesystem.write` et `filesystem.update` au début de chaque
 session, sans les exécuter. Lorsqu'une réponse du modèle est un appel JSON
 valide, il suit cet ordre :
 
@@ -1402,6 +1404,81 @@ pour une tentative invalide ou refusée. Il conserve le chemin, le résultat et
 le statut après filtrage habituel. Le contenu réel reste dans les échanges en
 mémoire et dans l'aperçu de confirmation, puis dans le fichier autorisé.
 Les tests utilisent des fichiers temporaires et FakeLLMProvider.
+
+## Outil fichiers : filesystem.update
+
+`aios.filesystem_update.FilesystemUpdateTool` remplace tout le contenu d'un
+fichier texte existant dans `~/AIOS-Workspace`. Il est classé `CONFIRM` : le CLI
+présente le chemin et le nouveau contenu, puis exige `oui` dans un terminal
+interactif à chaque appel. Aucun accès au fichier ni aucune sauvegarde ne sont
+effectués sans autorisation, y compris lors d'un appel Python direct.
+
+Les deux arguments obligatoires sont `path` et `content`, avec les mêmes
+contrôles que `filesystem.write`. Le chemin est relatif au workspace existant,
+ses parents doivent déjà exister et aucun lien symbolique n'est suivi. Les
+composants commençant par `.aios-update-` sont réservés aux sauvegardes et
+refusés comme cibles. L'ancien et le nouveau contenu doivent chacun être du
+texte UTF-8 valide d'au plus 64 Kio, sans contrôles ASCII autres que tabulation,
+CR et LF. Une chaîne vide est autorisée ; la limite du JSON complet reste
+applicable. Aucun ajout partiel, patch ou option d'écrasement n'est accepté.
+
+```json
+{"tool":"filesystem.update","arguments":{"path":"documents/notes.txt","content":"Texte corrigé"}}
+```
+
+Le fichier doit être régulier, appartenir au compte du daemon, être accessible
+en lecture/écriture et n'avoir qu'un seul lien physique. Les fichiers manquants,
+liens symboliques, dossiers, fichiers spéciaux, fichiers sans bit d'écriture,
+bits setuid/setgid/sticky et attributs étendus (dont ACL) sont refusés. L'outil
+refuse ces métadonnées plutôt que de les perdre ou de modifier les autorisations.
+Il n'effectue aucune élévation de privilèges.
+
+Après lecture bornée de l'original, l'outil crée un dossier unique
+`.aios-update-<identifiant>` à côté du fichier, avec des permissions `0700`
+réduites par l'umask. Il y écrit `backup.txt`, copie indépendante et exacte des
+anciens octets, en `0600` réduit par l'umask. La sauvegarde et ses entrées de
+répertoire sont synchronisées sur disque avant tout remplacement de l'original.
+Un échec de cette préparation empêche la modification du fichier.
+
+Le nouveau contenu est écrit intégralement dans `replacement.tmp`, dans ce
+même dossier privé, puis synchronisé. Le propriétaire, le groupe et les bits
+de permission ordinaires du fichier sont conservés ; si leur application
+échoue ou si des ACL sont héritées, le remplacement est refusé. Les dates et
+l'inode changent. Les identités et métadonnées de l'original, de la sauvegarde
+et du fichier préparé sont revérifiées avant le remplacement par
+[`os.replace`](https://docs.python.org/3.12/library/os.html#os.replace),
+relativement aux descripteurs des dossiers ouverts. L'original n'est jamais
+tronqué : le changement de contenu visible est atomique.
+
+Ce contrôle détecte les changements concurrents observés pendant la préparation,
+mais le contrôle final et le renommage ne constituent pas une comparaison et un
+remplacement indivisibles. Utilisez cet outil sur un fichier sans autre écrivain
+simultané ; il ne fournit pas de verrou exclusif contre les programmes externes.
+Les descripteurs restent attachés aux dossiers ouverts si leurs noms sont
+déplacés ; aucun chemin de remplacement n'est suivi vers un autre dossier.
+
+Après remplacement et synchronisation des répertoires, le résultat contient :
+
+```json
+{"path":"documents/notes.txt","updated":true,"size_bytes":14,"backup_path":"documents/.aios-update-<identifiant>/backup.txt"}
+```
+
+`backup_path` est relatif au workspace. Chaque appel crée une sauvegarde distincte,
+sans écraser les précédentes. Seuls le chemin, la taille, le chemin de sauvegarde
+et le statut sont transmis au modèle et à l'historique des outils. Le Core masque
+l'argument `content` avant toute insertion SQLite, même si l'appel est invalide
+ou refusé. Aucun ancien ou nouveau contenu n'est ajouté aux logs applicatifs.
+
+Un refus produit `Tool execution denied`, des arguments invalides
+`Invalid tool arguments` et un échec avant remplacement `Tool execution failed`.
+Une erreur au moment du remplacement, de sa synchronisation ou de sa fermeture
+produit `File update outcome uncertain; inspect file and backup before retrying` :
+le fichier peut déjà avoir été modifié. Une interruption se propage également
+sans annulation automatique. Dans tous les cas, une préparation incomplète peut
+rester dans le dossier privé ; sa présence seule ne prouve pas le succès d'une
+sauvegarde ou d'une mise à jour. Aucun nettoyage, nouvel essai ou rollback
+automatique n'est effectué. Les sauvegardes restent disponibles pour inspection
+et récupération manuelles ; leur gestion étendue reste une étape future.
 
 ## Tests
 

@@ -76,6 +76,22 @@ laisser un fichier incomplet ; elle ne signifie pas une annulation de la créati
 Le CLI présente le chemin et le contenu à confirmer ; content est masqué dans
 l'historique SQLite et n'est pas journalisé.
 {"tool":"filesystem.write","arguments":{"path":"notes.txt","content":"Bonjour"}}
+- filesystem.update [CONFIRM] : remplacer tout le texte d'un fichier existant dans ~/AIOS-Workspace après confirmation et sauvegarde.
+path et content obligatoires, mêmes règles et limites que filesystem.write :
+ancien et nouveau texte UTF-8 d'au plus 65536 octets chacun. Le fichier doit être
+régulier, accessible en lecture/écriture, appartenir au compte du daemon, sans
+lien symbolique, lien physique multiple, bits de permission spéciaux ni attributs
+étendus (dont ACL).
+Les composants de chemin commençant par .aios-update- sont réservés aux sauvegardes.
+Une copie exacte de l'ancien contenu est synchronisée dans un dossier privé
+.aios-update-<identifiant>/backup.txt à côté du fichier avant remplacement atomique.
+Le résultat contient path, updated=true, size_bytes et backup_path relatif au
+workspace. Le nouveau contenu est confirmé par le CLI et masqué dans SQLite.
+Une erreur peut laisser une préparation incomplète ou une issue incertaine après
+remplacement : ne réessaie pas automatiquement et n'annonce pas d'annulation.
+Ne modifie pas simultanément ce fichier avec un autre programme. Aucun rollback
+automatique ni suppression des sauvegardes n'est disponible.
+{"tool":"filesystem.update","arguments":{"path":"notes.txt","content":"Texte corrigé"}}
 
 Résultats réels
 L'application renvoie après ton appel un message de rôle user contenant un objet

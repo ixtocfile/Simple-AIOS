@@ -24,6 +24,15 @@ def validate_relative_path(path: object) -> str:
     return path
 
 
+def encode_text(content: object, limit: int) -> bytes:
+    if not isinstance(content, str) or len(content) > limit:
+        raise ValueError("content must be bounded UTF-8 text")
+    data = content.encode("utf-8")
+    if len(data) > limit or any((ord(c) < 32 and c not in "\t\r\n") or ord(c) == 127 for c in content):
+        raise ValueError("content must be bounded UTF-8 text")
+    return data
+
+
 @contextmanager
 def open_directory(workspace: Path, path: str):
     parts = workspace.parts[1:] + (() if path == "." else tuple(path.split("/")))
